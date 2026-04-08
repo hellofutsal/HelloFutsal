@@ -1,0 +1,22 @@
+meta {
+  name: OTP Verify
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://localhost:3000/auth/admins/verify-otp
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "ayush52@gmail.com",
+    "otp": "256719"
+  }
+}

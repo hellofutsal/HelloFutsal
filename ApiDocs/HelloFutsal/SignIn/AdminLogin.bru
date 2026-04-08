@@ -1,0 +1,18 @@
+meta {
+  name: AdminLogin
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{development}}/auth/admins/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+      "email": "admin1@example.com",
+    "password": "StrongPass123"
+  }
+}
