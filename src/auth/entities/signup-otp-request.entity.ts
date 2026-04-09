@@ -31,7 +31,7 @@ export class SignupOtpRequest {
   @Column({ name: "otp_hash" })
   otpHash!: string;
 
-  @Column({ name: "raw_otp", nullable: true })
+  @Column({ name: "raw_otp", type: "varchar", nullable: true })
   rawOtp?: string | null;
 
   @Column({ name: "expires_at", type: "timestamp" })
