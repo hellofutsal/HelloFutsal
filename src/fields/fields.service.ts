@@ -39,12 +39,15 @@ export class FieldsService {
   async create(account: AuthenticatedAccount, createFieldDto: CreateFieldDto) {
     this.ensureAdmin(account);
 
+    const normalizedField = this.normalizeCreateFieldInput(createFieldDto);
+    await this.ensureFieldNameIsAvailable(account.id, normalizedField.name);
+
     const field = this.fieldsRepository.create({
       ownerId: account.id,
-      name: createFieldDto.name.trim(),
-      city: createFieldDto.city?.trim(),
-      address: createFieldDto.address?.trim(),
-      description: createFieldDto.description?.trim(),
+      name: normalizedField.name,
+      city: normalizedField.city,
+      address: normalizedField.address,
+      description: normalizedField.description,
       isActive: true,
     });
 
@@ -76,8 +79,12 @@ export class FieldsService {
       throw new BadRequestException("At least one field is required");
     }
 
-    const normalizedNames = createFieldDtos.map((field) =>
-      field.name.trim().toLowerCase(),
+    const normalizedFields = createFieldDtos.map((field) =>
+      this.normalizeCreateFieldInput(field),
+    );
+
+    const normalizedNames = normalizedFields.map((field) =>
+      field.name.toLowerCase(),
     );
     const uniqueNameCount = new Set(normalizedNames).size;
 
@@ -87,13 +94,24 @@ export class FieldsService {
       );
     }
 
-    const fields = createFieldDtos.map((createFieldDto) =>
+    const existingFieldNames = await this.findExistingNamesByOwner(
+      account.id,
+      normalizedNames,
+    );
+
+    if (existingFieldNames.length > 0) {
+      throw new ConflictException(
+        `One or more field names already exist for this owner: ${existingFieldNames.join(", ")}`,
+      );
+    }
+
+    const fields = normalizedFields.map((normalizedField) =>
       this.fieldsRepository.create({
         ownerId: account.id,
-        name: createFieldDto.name.trim(),
-        city: createFieldDto.city?.trim(),
-        address: createFieldDto.address?.trim(),
-        description: createFieldDto.description?.trim(),
+        name: normalizedField.name,
+        city: normalizedField.city,
+        address: normalizedField.address,
+        description: normalizedField.description,
         isActive: true,
       }),
     );
@@ -119,6 +137,86 @@ export class FieldsService {
 
       throw error;
     }
+  }
+
+  private normalizeCreateFieldInput(createFieldDto: CreateFieldDto): {
+    name: string;
+    city?: string;
+    address?: string;
+    description?: string;
+  } {
+    const name = createFieldDto.name.trim();
+    if (name.length < 2 || name.length > 120) {
+      throw new BadRequestException(
+        "name must be longer than or equal to 2 characters",
+      );
+    }
+
+    return {
+      name,
+      city: this.normalizeOptionalText(createFieldDto.city, 2, 80),
+      address: this.normalizeOptionalText(createFieldDto.address, 2, 255),
+      description: this.normalizeOptionalText(
+        createFieldDto.description,
+        2,
+        1000,
+      ),
+    };
+  }
+
+  private normalizeOptionalText(
+    value: string | undefined,
+    minLength: number,
+    maxLength: number,
+  ): string | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    if (trimmed.length < minLength || trimmed.length > maxLength) {
+      throw new BadRequestException(
+        `value length must be between ${minLength} and ${maxLength} characters`,
+      );
+    }
+
+    return trimmed;
+  }
+
+  private async ensureFieldNameIsAvailable(
+    ownerId: string,
+    name: string,
+  ): Promise<void> {
+    const existingField = await this.fieldsRepository
+      .createQueryBuilder("field")
+      .select("field.id", "id")
+      .where("field.owner_id = :ownerId", { ownerId })
+      .andWhere("LOWER(field.name) = LOWER(:name)", { name })
+      .getRawOne<{ id: string }>();
+
+    if (existingField) {
+      throw new ConflictException(
+        "Field with this name already exists for this owner",
+      );
+    }
+  }
+
+  private async findExistingNamesByOwner(
+    ownerId: string,
+    lowerCaseNames: string[],
+  ): Promise<string[]> {
+    const existingFields = await this.fieldsRepository
+      .createQueryBuilder("field")
+      .select("field.name", "name")
+      .where("field.owner_id = :ownerId", { ownerId })
+      .andWhere("LOWER(field.name) IN (:...names)", { names: lowerCaseNames })
+      .getRawMany<{ name: string }>();
+
+    return existingFields.map((field) => field.name);
   }
 
   private ensureAdmin(account: AuthenticatedAccount): void {
