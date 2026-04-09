@@ -251,7 +251,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException("Invalid credentials");
+      throw new UnauthorizedException("Account not found");
     }
 
     await this.assertPasswordMatches(loginDto.password, user.passwordHash);
@@ -402,7 +402,7 @@ export class AuthService {
     });
 
     if (!admin) {
-      throw new UnauthorizedException("Invalid credentials");
+      throw new UnauthorizedException("Account not found");
     }
 
     await this.assertPasswordMatches(loginDto.password, admin.passwordHash);
