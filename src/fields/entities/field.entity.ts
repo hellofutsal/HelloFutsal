@@ -1,0 +1,49 @@
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from "typeorm";
+import { GroundOwnerAccount } from "../../auth/entities/ground-owner.entity";
+
+@Entity({ name: "fields" })
+@Index(["ownerId"])
+@Index(["ownerId", "name"], { unique: true })
+export class Field {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Column({ name: "owner_id", type: "uuid" })
+  ownerId!: string;
+
+  @ManyToOne(() => GroundOwnerAccount, (owner) => owner.fields, {
+    onDelete: "CASCADE",
+  })
+  @JoinColumn({ name: "owner_id" })
+  owner!: GroundOwnerAccount;
+
+  @Column({ type: "varchar" })
+  name!: string;
+
+  @Column({ type: "varchar", nullable: true })
+  city?: string;
+
+  @Column({ type: "varchar", nullable: true })
+  address?: string;
+
+  @Column({ type: "text", nullable: true })
+  description?: string;
+
+  @Column({ name: "is_active", type: "boolean", default: true })
+  isActive!: boolean;
+
+  @CreateDateColumn({ name: "created_at" })
+  createdAt!: Date;
+
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt!: Date;
+}

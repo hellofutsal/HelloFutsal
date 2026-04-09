@@ -1,0 +1,19 @@
+meta {
+  name: GetFieldByAdmin
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{development}}/fields/mine
+  body: none
+  auth: bearer
+}
+
+headers {
+  ~Authorization: Bearer $TOKEN
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5YmZjNzM5Yi0xNmRmLTQwMWQtYTM1MS05MWY5YjM5NGFjN2IiLCJlbWFpbCI6ImF5dXNoNTRAZ21haWwuY29tIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzc1NzIxNDg1LCJleHAiOjE3NzU4MDc4ODV9.dA-SeDQtuFwnOEmfsI4ZvU5jwPe6b_zTtAzM0kIKi3Q
+}
