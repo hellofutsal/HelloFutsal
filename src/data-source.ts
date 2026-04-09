@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import { DataSource } from "typeorm";
 import { GroundOwnerAccount } from "./auth/entities/ground-owner.entity";
 import { UserAccount } from "./auth/entities/user.entity";
+import { Field } from "./fields/entities/field.entity";
 import { join } from "path";
 
 function resolveSslConfig(sslMode: string) {
@@ -61,6 +62,6 @@ export default new DataSource({
   database: process.env.DB_NAME ?? process.env.PGDATABASE ?? "hellofutsal",
   ssl: resolveSslConfig(sslMode),
   extra: channelBindingRequired ? { enableChannelBinding: true } : undefined,
-  entities: [UserAccount, GroundOwnerAccount],
+  entities: [UserAccount, GroundOwnerAccount, Field],
   migrations: [join(__dirname, "migrations", "*{.ts,.js}")],
 });

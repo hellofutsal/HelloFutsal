@@ -6,6 +6,8 @@ import { join } from "path";
 import { AuthModule } from "./auth/auth.module";
 import { GroundOwnerAccount } from "./auth/entities/ground-owner.entity";
 import { UserAccount } from "./auth/entities/user.entity";
+import { Field } from "./fields/entities/field.entity";
+import { FieldsModule } from "./fields/fields.module";
 
 function resolveSslConfig(configService: ConfigService, sslMode: string) {
   if (sslMode === "disable" || sslMode === "allow" || sslMode === "prefer") {
@@ -109,7 +111,7 @@ function getDatabaseConfig(configService: ConfigService) {
           database: dbConfig.database,
           ssl: dbConfig.ssl,
           extra: dbConfig.extra,
-          entities: [UserAccount, GroundOwnerAccount],
+          entities: [UserAccount, GroundOwnerAccount, Field],
           autoLoadEntities: true,
           migrations: [join(__dirname, "migrations", "*{.ts,.js}")],
           migrationsRun:
@@ -120,6 +122,7 @@ function getDatabaseConfig(configService: ConfigService) {
       },
     }),
     AuthModule,
+    FieldsModule,
   ],
 })
 export class AppModule {}

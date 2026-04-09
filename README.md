@@ -56,6 +56,16 @@ The app loads secrets from `.env`, waits for Postgres to become healthy, then ru
 - `POST /auth/admins/verify-otp`
 - `POST /auth/admins/login`
 - `GET /auth/me`
+- `GET /fields` (public list of active fields)
+- `GET /fields/mine` (admin only)
+- `POST /fields` (admin only)
+- `POST /fields/bulk` (admin only, create multiple fields at once)
+
+## Field ownership model
+
+- One admin can own multiple fields.
+- Field names are unique per owner (same name can be used by different owners).
+- Fields are separated by owner to support multi-tenant usage.
 
 ## User signup OTP flow
 
@@ -83,4 +93,5 @@ The app loads secrets from `.env`, waits for Postgres to become healthy, then ru
 
 - `synchronize` is disabled (`DB_SYNCHRONIZE=false`) for local and Docker environments.
 - Use migrations for all schema changes.
+
 # HelloFutsal

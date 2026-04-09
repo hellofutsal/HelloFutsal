@@ -2,9 +2,11 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from "typeorm";
+import { Field } from "../../fields/entities/field.entity";
 
 @Entity({ name: "admins" })
 export class GroundOwnerAccount {
@@ -22,6 +24,9 @@ export class GroundOwnerAccount {
 
   @Column({ name: "password_hash" })
   passwordHash!: string;
+
+  @OneToMany(() => Field, (field) => field.owner)
+  fields?: Field[];
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;

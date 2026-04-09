@@ -7,12 +7,16 @@ meta {
 post {
   url: {{development}}/auth/admins/login
   body: json
-  auth: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: 
 }
 
 body:json {
   {
-      "email": "ayush53@gmail.com",
+   "email": "ayush54@gmail.com",
     "password": "StrongPass123"
   }
 }

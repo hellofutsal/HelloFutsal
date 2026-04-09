@@ -22,15 +22,24 @@ export class ApiExceptionFilter implements ExceptionFilter {
       ? exception.getStatus()
       : HttpStatus.INTERNAL_SERVER_ERROR;
 
+    const message = this.extractMessage(exception, statusCode);
+
     if (!isHttpException) {
       const stack = exception instanceof Error ? exception.stack : undefined;
       this.logger.error(
-        `Unhandled exception on ${request.method} ${request.url}`,
+        `Unhandled exception on ${request.method} ${request.url}: ${message}`,
         stack,
       );
-    }
+    } else {
+      const stack = exception instanceof Error ? exception.stack : undefined;
+      const logLine = `${statusCode} on ${request.method} ${request.url}: ${message}`;
 
-    const message = this.extractMessage(exception, statusCode);
+      if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
+        this.logger.error(logLine, stack);
+      } else {
+        this.logger.warn(logLine);
+      }
+    }
 
     response.status(statusCode).json({
       success: false,
