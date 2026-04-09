@@ -455,15 +455,10 @@ export class AuthService {
   }
 
   private shouldStoreRawOtp(): boolean {
-    const configured = process.env.STORE_RAW_OTP;
-    if (configured === "true") {
-      return true;
-    }
-    if (configured === "false") {
-      return false;
-    }
+    const emailOtpDeliveryEnabled =
+      process.env.EMAIL_OTP_DELIVERY_ENABLED === "true";
 
-    return process.env.NODE_ENV !== "production";
+    return !emailOtpDeliveryEnabled;
   }
 
   private isUniqueConstraintViolation(error: unknown): boolean {
