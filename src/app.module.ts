@@ -1,10 +1,49 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
+import { readFileSync } from "fs";
 import { join } from "path";
 import { AuthModule } from "./auth/auth.module";
 import { GroundOwnerAccount } from "./auth/entities/ground-owner.entity";
 import { UserAccount } from "./auth/entities/user.entity";
+
+function resolveSslConfig(configService: ConfigService, sslMode: string) {
+  if (sslMode === "disable" || sslMode === "allow" || sslMode === "prefer") {
+    return undefined;
+  }
+
+  if (sslMode === "require") {
+    return { rejectUnauthorized: false };
+  }
+
+  if (sslMode === "verify-ca" || sslMode === "verify-full") {
+    const sslRootCertPath =
+      configService.get<string>("DB_SSLROOTCERT") ??
+      configService.get<string>("PGSSLROOTCERT");
+    const sslRootCertBase64 = configService.get<string>(
+      "DB_SSLROOTCERT_BASE64",
+    );
+
+    const ca = sslRootCertBase64
+      ? Buffer.from(sslRootCertBase64, "base64").toString("utf8")
+      : sslRootCertPath
+        ? readFileSync(sslRootCertPath, "utf8")
+        : undefined;
+
+    if (!ca) {
+      throw new Error(
+        `SSL mode ${sslMode} requires DB_SSLROOTCERT (path) or DB_SSLROOTCERT_BASE64`,
+      );
+    }
+
+    return {
+      rejectUnauthorized: true,
+      ca,
+    };
+  }
+
+  throw new Error(`Unsupported DB_SSLMODE/PGSSLMODE value: ${sslMode}`);
+}
 
 function getDatabaseConfig(configService: ConfigService) {
   const host =
@@ -45,12 +84,7 @@ function getDatabaseConfig(configService: ConfigService) {
     username,
     password,
     database,
-    ssl:
-      sslMode === "require" ||
-      sslMode === "verify-ca" ||
-      sslMode === "verify-full"
-        ? { rejectUnauthorized: false }
-        : undefined,
+    ssl: resolveSslConfig(configService, sslMode),
     extra: channelBinding ? { enableChannelBinding: true } : undefined,
   };
 }
