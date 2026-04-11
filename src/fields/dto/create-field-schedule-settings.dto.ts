@@ -10,11 +10,11 @@ import {
 
 export class OperatingHoursDto {
   @IsString()
-  @Matches(/^((0?[1-9]|1[0-2]):[0-5]\d\s?[AaPp][Mm]|([01]?\d|2[0-3]):[0-5]\d)$/)
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
   openingTime!: string;
 
   @IsString()
-  @Matches(/^((0?[1-9]|1[0-2]):[0-5]\d\s?[AaPp][Mm]|([01]?\d|2[0-3]):[0-5]\d)$/)
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
   closingTime!: string;
 }
 
@@ -27,7 +27,22 @@ export class CreateFieldScheduleSettingsDto {
   @Min(0)
   breakBetweenMin!: number;
 
-  @Transform(({ value }) => (typeof value === "string" ? Number(value) : value))
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return undefined;
+      }
+
+      return Number(trimmed);
+    }
+
+    return value;
+  })
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   basePrice!: number;

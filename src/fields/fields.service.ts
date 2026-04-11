@@ -522,27 +522,7 @@ export class FieldsService {
   }
 
   private parseTimeToMinutes(time: string): number {
-    const normalizedTime = time.trim().toLowerCase();
-    const meridiemMatch = normalizedTime.match(
-      /^(0?[1-9]|1[0-2]):([0-5]\d)\s?([ap]m)$/,
-    );
-
-    if (meridiemMatch) {
-      let hours = Number(meridiemMatch[1]);
-      const minutes = Number(meridiemMatch[2]);
-      const meridiem = meridiemMatch[3];
-
-      if (meridiem === "pm" && hours !== 12) {
-        hours += 12;
-      }
-
-      if (meridiem === "am" && hours === 12) {
-        hours = 0;
-      }
-
-      return hours * 60 + minutes;
-    }
-
+    const normalizedTime = time.trim();
     const [hoursText, minutesText] = normalizedTime.split(":");
     const hours = Number(hoursText);
     const minutes = Number(minutesText);
