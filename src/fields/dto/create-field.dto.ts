@@ -1,10 +1,18 @@
 import { Transform } from "class-transformer";
-import { IsOptional, IsString, Length } from "class-validator";
+import { IsNumber, IsOptional, IsString, Length, Min } from "class-validator";
 
 export class CreateFieldDto {
   @IsString()
   @Length(2, 120)
-  name!: string;
+  venueName!: string;
+
+  @IsString()
+  @Length(2, 100)
+  fieldName!: string;
+
+  @IsNumber()
+  @Min(1)
+  playerCapacity!: number;
 
   @IsOptional()
   @Transform(({ value }) => {

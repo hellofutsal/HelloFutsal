@@ -12,7 +12,6 @@ import { GroundOwnerAccount } from "../../auth/entities/ground-owner.entity";
 
 @Entity({ name: "fields" })
 @Index(["ownerId"])
-@Index(["ownerId", "name"], { unique: true })
 export class Field {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
@@ -26,8 +25,14 @@ export class Field {
   @JoinColumn({ name: "owner_id" })
   owner!: GroundOwnerAccount;
 
-  @Column({ type: "varchar" })
-  name!: string;
+  @Column({ name: "venue_name", type: "varchar" })
+  venueName!: string;
+
+  @Column({ name: "field_name", type: "varchar" })
+  fieldName!: string;
+
+  @Column({ name: "player_capacity", type: "integer" })
+  playerCapacity!: number;
 
   @Column({ type: "varchar", nullable: true })
   city?: string;

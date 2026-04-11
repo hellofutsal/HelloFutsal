@@ -6,7 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { QueryFailedError, Repository } from "typeorm";
+import { Brackets, QueryFailedError, Repository } from "typeorm";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { CreateFieldDto } from "./dto/create-field.dto";
 import { Field } from "./entities/field.entity";
@@ -40,11 +40,17 @@ export class FieldsService {
     this.ensureAdmin(account);
 
     const normalizedField = this.normalizeCreateFieldInput(createFieldDto);
-    await this.ensureFieldNameIsAvailable(account.id, normalizedField.name);
+    await this.ensureVenueFieldPairIsAvailable(
+      account.id,
+      normalizedField.venueName,
+      normalizedField.fieldName,
+    );
 
     const field = this.fieldsRepository.create({
       ownerId: account.id,
-      name: normalizedField.name,
+      venueName: normalizedField.venueName,
+      fieldName: normalizedField.fieldName,
+      playerCapacity: normalizedField.playerCapacity,
       city: normalizedField.city,
       address: normalizedField.address,
       description: normalizedField.description,
@@ -60,9 +66,7 @@ export class FieldsService {
       );
 
       if (this.isUniqueConstraintViolation(error)) {
-        throw new ConflictException(
-          "Field with this name already exists for this owner",
-        );
+        throw new ConflictException("Field name already exists for this venue");
       }
 
       throw error;
@@ -83,32 +87,39 @@ export class FieldsService {
       this.normalizeCreateFieldInput(field),
     );
 
-    const normalizedNames = normalizedFields.map((field) =>
-      field.name.toLowerCase(),
+    const normalizedVenueFieldPairs = normalizedFields.map(
+      (field) =>
+        `${field.venueName.toLowerCase()}::${field.fieldName.toLowerCase()}`,
     );
-    const uniqueNameCount = new Set(normalizedNames).size;
+    const uniqueFieldPairCount = new Set(normalizedVenueFieldPairs).size;
 
-    if (uniqueNameCount !== normalizedNames.length) {
+    if (uniqueFieldPairCount !== normalizedVenueFieldPairs.length) {
       throw new BadRequestException(
-        "Field names must be unique within the same request",
+        "Each field name must be unique within its venue in the same request",
       );
     }
 
-    const existingFieldNames = await this.findExistingNamesByOwner(
-      account.id,
-      normalizedNames,
-    );
+    const existingVenueFieldPairs =
+      await this.findExistingVenueFieldPairsByOwner(
+        account.id,
+        normalizedFields.map((field) => ({
+          venueName: field.venueName,
+          fieldName: field.fieldName,
+        })),
+      );
 
-    if (existingFieldNames.length > 0) {
+    if (existingVenueFieldPairs.length > 0) {
       throw new ConflictException(
-        `One or more field names already exist for this owner: ${existingFieldNames.join(", ")}`,
+        `One or more venue/field pairs already exist: ${existingVenueFieldPairs.join(", ")}`,
       );
     }
 
     const fields = normalizedFields.map((normalizedField) =>
       this.fieldsRepository.create({
         ownerId: account.id,
-        name: normalizedField.name,
+        venueName: normalizedField.venueName,
+        fieldName: normalizedField.fieldName,
+        playerCapacity: normalizedField.playerCapacity,
         city: normalizedField.city,
         address: normalizedField.address,
         description: normalizedField.description,
@@ -131,7 +142,7 @@ export class FieldsService {
 
       if (this.isUniqueConstraintViolation(error)) {
         throw new ConflictException(
-          "One or more field names already exist for this owner",
+          "One or more venue/field pairs already exist",
         );
       }
 
@@ -140,20 +151,40 @@ export class FieldsService {
   }
 
   private normalizeCreateFieldInput(createFieldDto: CreateFieldDto): {
-    name: string;
+    venueName: string;
+    fieldName: string;
+    playerCapacity: number;
     city?: string;
     address?: string;
     description?: string;
   } {
-    const name = createFieldDto.name.trim();
-    if (name.length < 2 || name.length > 120) {
+    const venueName = createFieldDto.venueName.trim();
+    if (venueName.length < 2 || venueName.length > 120) {
       throw new BadRequestException(
-        "name must be longer than or equal to 2 characters",
+        "venueName must be longer than or equal to 2 characters",
+      );
+    }
+
+    const fieldName = createFieldDto.fieldName.trim();
+    if (fieldName.length < 2 || fieldName.length > 100) {
+      throw new BadRequestException(
+        "fieldName must be longer than or equal to 2 characters",
+      );
+    }
+
+    if (
+      !Number.isInteger(createFieldDto.playerCapacity) ||
+      createFieldDto.playerCapacity < 1
+    ) {
+      throw new BadRequestException(
+        "playerCapacity must be a positive integer",
       );
     }
 
     return {
-      name,
+      venueName,
+      fieldName,
+      playerCapacity: createFieldDto.playerCapacity,
       city: this.normalizeOptionalText(createFieldDto.city, 2, 80),
       address: this.normalizeOptionalText(createFieldDto.address, 2, 255),
       description: this.normalizeOptionalText(
@@ -187,36 +218,55 @@ export class FieldsService {
     return trimmed;
   }
 
-  private async ensureFieldNameIsAvailable(
+  private async ensureVenueFieldPairIsAvailable(
     ownerId: string,
-    name: string,
+    venueName: string,
+    fieldName: string,
   ): Promise<void> {
     const existingField = await this.fieldsRepository
       .createQueryBuilder("field")
       .select("field.id", "id")
       .where("field.owner_id = :ownerId", { ownerId })
-      .andWhere("LOWER(field.name) = LOWER(:name)", { name })
+      .andWhere("LOWER(field.venue_name) = LOWER(:venueName)", { venueName })
+      .andWhere("LOWER(field.field_name) = LOWER(:fieldName)", { fieldName })
       .getRawOne<{ id: string }>();
 
     if (existingField) {
-      throw new ConflictException(
-        "Field with this name already exists for this owner",
-      );
+      throw new ConflictException("Field name already exists for this venue");
     }
   }
 
-  private async findExistingNamesByOwner(
+  private async findExistingVenueFieldPairsByOwner(
     ownerId: string,
-    lowerCaseNames: string[],
+    venueFieldPairs: { venueName: string; fieldName: string }[],
   ): Promise<string[]> {
+    if (venueFieldPairs.length === 0) {
+      return [];
+    }
+
     const existingFields = await this.fieldsRepository
       .createQueryBuilder("field")
-      .select("field.name", "name")
+      .select("field.venue_name", "venueName")
+      .addSelect("field.field_name", "fieldName")
       .where("field.owner_id = :ownerId", { ownerId })
-      .andWhere("LOWER(field.name) IN (:...names)", { names: lowerCaseNames })
-      .getRawMany<{ name: string }>();
+      .andWhere(
+        new Brackets((qb) => {
+          venueFieldPairs.forEach((pair, index) => {
+            qb.orWhere(
+              `(LOWER(field.venue_name) = LOWER(:venueName${index}) AND LOWER(field.field_name) = LOWER(:fieldName${index}))`,
+              {
+                [`venueName${index}`]: pair.venueName,
+                [`fieldName${index}`]: pair.fieldName,
+              },
+            );
+          });
+        }),
+      )
+      .getRawMany<{ venueName: string; fieldName: string }>();
 
-    return existingFields.map((field) => field.name);
+    return existingFields.map(
+      (field) => `${field.venueName} - ${field.fieldName}`,
+    );
   }
 
   private ensureAdmin(account: AuthenticatedAccount): void {
