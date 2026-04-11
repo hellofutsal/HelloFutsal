@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Param,
   ParseArrayPipe,
   ParseUUIDPipe,
@@ -10,11 +11,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { plainToInstance } from "class-transformer";
-import { validateSync } from "class-validator";
+import { ValidationError, validateSync } from "class-validator";
 import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { CreateFieldDto } from "./dto/create-field.dto";
+import { CreateFieldRuleBookDto } from "./dto/create-field-rule-book.dto";
 import { CreateFieldScheduleSettingsDto } from "./dto/create-field-schedule-settings.dto";
 import { CreateFieldSlotDto } from "./dto/create-field-slot.dto";
 import { FieldsService } from "./fields.service";
@@ -96,6 +98,28 @@ export class FieldsController {
     return this.fieldsService.createScheduleSettings(account, fieldId, dto);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Patch(":fieldId/schedule-settings")
+  updateScheduleSettings(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Body() payload: CreateFieldScheduleSettingsDto,
+  ) {
+    const dto = this.validateScheduleSettingsDto(payload, "scheduleSettings");
+    return this.fieldsService.updateScheduleSettings(account, fieldId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(":fieldId/rule-books")
+  createRuleBook(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Body() payload: CreateFieldRuleBookDto,
+  ) {
+    const dto = this.validateRuleBookDto(payload, "ruleBook");
+    return this.fieldsService.createFieldRuleBook(account, fieldId, dto);
+  }
+
   private validateDto(value: unknown, label: string): CreateFieldDto {
     const dto = plainToInstance(CreateFieldDto, value);
     const errors = validateSync(dto, {
@@ -104,9 +128,7 @@ export class FieldsController {
     });
 
     if (errors.length > 0) {
-      const message = errors
-        .flatMap((error) => Object.values(error.constraints ?? {}))
-        .join(", ");
+      const message = this.collectValidationMessages(errors).join(", ");
       throw new BadRequestException(`${label}: ${message}`);
     }
 
@@ -121,9 +143,7 @@ export class FieldsController {
     });
 
     if (errors.length > 0) {
-      const message = errors
-        .flatMap((error) => Object.values(error.constraints ?? {}))
-        .join(", ");
+      const message = this.collectValidationMessages(errors).join(", ");
       throw new BadRequestException(`${label}: ${message}`);
     }
 
@@ -141,12 +161,55 @@ export class FieldsController {
     });
 
     if (errors.length > 0) {
-      const message = errors
-        .flatMap((error) => Object.values(error.constraints ?? {}))
-        .join(", ");
+      const message = this.collectValidationMessages(errors).join(", ");
       throw new BadRequestException(`${label}: ${message}`);
     }
 
     return dto;
+  }
+
+  private validateRuleBookDto(
+    value: unknown,
+    label: string,
+  ): CreateFieldRuleBookDto {
+    const dto = plainToInstance(CreateFieldRuleBookDto, value);
+    const errors = validateSync(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    if (errors.length > 0) {
+      const message = this.collectValidationMessages(errors).join(", ");
+      throw new BadRequestException(`${label}: ${message}`);
+    }
+
+    return dto;
+  }
+
+  private collectValidationMessages(
+    errors: ValidationError[],
+    parentPath = "",
+  ): string[] {
+    const messages: string[] = [];
+
+    for (const error of errors) {
+      const propertyPath = parentPath
+        ? `${parentPath}.${error.property}`
+        : error.property;
+
+      if (error.constraints) {
+        for (const message of Object.values(error.constraints)) {
+          messages.push(`${propertyPath}: ${message}`);
+        }
+      }
+
+      if (error.children && error.children.length > 0) {
+        messages.push(
+          ...this.collectValidationMessages(error.children, propertyPath),
+        );
+      }
+    }
+
+    return messages;
   }
 }

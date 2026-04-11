@@ -1,15 +1,18 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
+import { ScheduleModule } from "@nestjs/schedule";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { AuthModule } from "./auth/auth.module";
 import { GroundOwnerAccount } from "./auth/entities/ground-owner.entity";
 import { UserAccount } from "./auth/entities/user.entity";
+import { FieldRuleBook } from "./fields/entities/field-rule-book.entity";
 import { Field } from "./fields/entities/field.entity";
 import { FieldScheduleSettings } from "./fields/entities/field-schedule-settings.entity";
 import { FieldSlot } from "./fields/entities/field-slot.entity";
 import { FieldsModule } from "./fields/fields.module";
+import { KeepAliveModule } from "./keep-alive/keep-alive.module";
 
 function resolveSslConfig(configService: ConfigService, sslMode: string) {
   if (sslMode === "disable" || sslMode === "allow" || sslMode === "prefer") {
@@ -99,6 +102,7 @@ function getDatabaseConfig(configService: ConfigService) {
       isGlobal: true,
       envFilePath: ".env",
     }),
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
@@ -118,6 +122,7 @@ function getDatabaseConfig(configService: ConfigService) {
             GroundOwnerAccount,
             Field,
             FieldScheduleSettings,
+            FieldRuleBook,
             FieldSlot,
           ],
           autoLoadEntities: true,
@@ -131,6 +136,7 @@ function getDatabaseConfig(configService: ConfigService) {
     }),
     AuthModule,
     FieldsModule,
+    KeepAliveModule,
   ],
 })
 export class AppModule {}
