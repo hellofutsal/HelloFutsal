@@ -3,7 +3,9 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   ParseArrayPipe,
+  ParseUUIDPipe,
   Post,
   UseGuards,
 } from "@nestjs/common";
@@ -13,6 +15,8 @@ import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { CreateFieldDto } from "./dto/create-field.dto";
+import { CreateFieldScheduleSettingsDto } from "./dto/create-field-schedule-settings.dto";
+import { CreateFieldSlotDto } from "./dto/create-field-slot.dto";
 import { FieldsService } from "./fields.service";
 
 @Controller("fields")
@@ -63,8 +67,74 @@ export class FieldsController {
     return this.fieldsService.createMany(account, createFieldDtos);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post(":fieldId/slots")
+  createSlots(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Body() payload: CreateFieldSlotDto | CreateFieldSlotDto[],
+  ) {
+    if (Array.isArray(payload)) {
+      const slotDtos = payload.map((item, index) =>
+        this.validateSlotDto(item, `slots[${index}]`),
+      );
+      return this.fieldsService.createSlots(account, fieldId, slotDtos);
+    }
+
+    const slotDto = this.validateSlotDto(payload, "slot");
+    return this.fieldsService.createSlots(account, fieldId, [slotDto]);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(":fieldId/schedule-settings")
+  createScheduleSettings(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Body() payload: CreateFieldScheduleSettingsDto,
+  ) {
+    const dto = this.validateScheduleSettingsDto(payload, "scheduleSettings");
+    return this.fieldsService.createScheduleSettings(account, fieldId, dto);
+  }
+
   private validateDto(value: unknown, label: string): CreateFieldDto {
     const dto = plainToInstance(CreateFieldDto, value);
+    const errors = validateSync(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    if (errors.length > 0) {
+      const message = errors
+        .flatMap((error) => Object.values(error.constraints ?? {}))
+        .join(", ");
+      throw new BadRequestException(`${label}: ${message}`);
+    }
+
+    return dto;
+  }
+
+  private validateSlotDto(value: unknown, label: string): CreateFieldSlotDto {
+    const dto = plainToInstance(CreateFieldSlotDto, value);
+    const errors = validateSync(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    if (errors.length > 0) {
+      const message = errors
+        .flatMap((error) => Object.values(error.constraints ?? {}))
+        .join(", ");
+      throw new BadRequestException(`${label}: ${message}`);
+    }
+
+    return dto;
+  }
+
+  private validateScheduleSettingsDto(
+    value: unknown,
+    label: string,
+  ): CreateFieldScheduleSettingsDto {
+    const dto = plainToInstance(CreateFieldScheduleSettingsDto, value);
     const errors = validateSync(dto, {
       whitelist: true,
       forbidNonWhitelisted: true,

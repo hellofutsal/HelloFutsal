@@ -1,0 +1,32 @@
+meta {
+  name: CreateFieldScheduleSettings
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{development}}/fields/97f2772e-0ccf-4aa5-ad22-ce1f4d389db2/schedule-settings
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+  ~Authorization: Bearer $TOKEN
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ZjZhMmEwOS0wOGI0LTRiZTItYjgxMy01YjdiMTlkZTkwNDEiLCJlbWFpbCI6bnVsbCwibW9iaWxlTnVtYmVyIjoiOTgxMjM0NTY3OCIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NTg4Nzg4OSwiZXhwIjoxNzc1OTc0Mjg5fQ.YACnVVaIsq-C4agYv7CwzmWegFVI1hgpLIlcRgqHn4Q
+}
+
+body:json {
+  {
+    "slotDurationMin": 60,
+    "breakBetweenMin": 10,
+    "basePrice": 1200,
+    "operatingHours": {
+      "openingTime": "06:00",
+      "closingTime": "18:00"
+    }
+  }
+}

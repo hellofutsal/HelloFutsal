@@ -5,10 +5,14 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
+  OneToMany,
   UpdateDateColumn,
 } from "typeorm";
 import { GroundOwnerAccount } from "../../auth/entities/ground-owner.entity";
+import { FieldScheduleSettings } from "./field-schedule-settings.entity";
+import { FieldSlot } from "./field-slot.entity";
 
 @Entity({ name: "fields" })
 @Index(["ownerId"])
@@ -45,6 +49,15 @@ export class Field {
 
   @Column({ name: "is_active", type: "boolean", default: true })
   isActive!: boolean;
+
+  @OneToOne(
+    () => FieldScheduleSettings,
+    (scheduleSettings) => scheduleSettings.field,
+  )
+  scheduleSettings?: FieldScheduleSettings;
+
+  @OneToMany(() => FieldSlot, (slot) => slot.field)
+  slots?: FieldSlot[];
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
