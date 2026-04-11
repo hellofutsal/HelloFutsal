@@ -7,5 +7,4 @@ export interface AuthenticatedAccount {
   mobileNumber?: string;
   role: AccountRole;
   name?: string;
-  groundName?: string;
 }

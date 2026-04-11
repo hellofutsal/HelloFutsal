@@ -18,9 +18,6 @@ export class GroundOwnerAccount {
   @Column({ name: "owner_name" })
   ownerName!: string;
 
-  @Column({ name: "ground_name", nullable: true })
-  groundName?: string;
-
   @Column({ unique: true, nullable: true })
   email?: string;
 

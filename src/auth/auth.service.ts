@@ -419,7 +419,6 @@ export class AuthService {
       mobileNumber: savedAdmin.mobileNumber,
       role: "admin",
       name: savedAdmin.ownerName,
-      groundName: savedAdmin.groundName,
     });
   }
 
@@ -455,7 +454,6 @@ export class AuthService {
       mobileNumber: admin.mobileNumber,
       role: "admin",
       name: admin.ownerName,
-      groundName: admin.groundName,
     });
   }
 
