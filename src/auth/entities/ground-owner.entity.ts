@@ -19,8 +19,11 @@ export class GroundOwnerAccount {
   @Column({ name: "ground_name", nullable: true })
   groundName?: string;
 
-  @Column({ unique: true })
-  email!: string;
+  @Column({ unique: true, nullable: true })
+  email?: string;
+
+  @Column({ name: "mobile_number", unique: true, nullable: true })
+  mobileNumber?: string;
 
   @Column({ name: "password_hash" })
   passwordHash!: string;

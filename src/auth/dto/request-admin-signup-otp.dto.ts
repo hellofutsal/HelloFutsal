@@ -2,6 +2,7 @@ import {
   IsDefined,
   IsEmail,
   IsString,
+  Matches,
   MinLength,
   ValidateIf,
 } from "class-validator";
@@ -27,8 +28,23 @@ export class RequestAdminSignupOtpDto {
   @MinLength(1)
   ownerName?: string;
 
+  @ValidateIf(
+    (value: RequestAdminSignupOtpDto) => !value.email && !value.mobileNumber,
+  )
+  @IsDefined({ message: "Either email or mobile number is required" })
+  readonly identifier?: string;
+
+  @ValidateIf((value: RequestAdminSignupOtpDto) => value.email !== undefined)
   @IsEmail()
-  email!: string;
+  email?: string;
+
+  @ValidateIf(
+    (value: RequestAdminSignupOtpDto) => value.mobileNumber !== undefined,
+  )
+  @IsString()
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
+  @Matches(/^\+?[0-9]{7,15}$/)
+  mobileNumber?: string;
 
   @IsString()
   @MinLength(6)
