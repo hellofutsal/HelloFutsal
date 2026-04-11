@@ -15,14 +15,15 @@ export class KeepAliveService {
     }
 
     const targetUrl = this.resolveTargetUrl();
-    this.logger.log(`Keep-alive cron triggered. Target=${targetUrl}`);
+    const redactedTargetUrl = this.redactUrl(targetUrl);
+    this.logger.log(`Keep-alive cron triggered. Target=${redactedTargetUrl}`);
 
     try {
       await this.ping(targetUrl);
-      this.logger.log(`Keep-alive ping succeeded: ${targetUrl}`);
+      this.logger.log(`Keep-alive ping succeeded: ${redactedTargetUrl}`);
     } catch (error) {
       this.logger.warn(
-        `Keep-alive ping failed for ${targetUrl}: ${error instanceof Error ? error.message : String(error)}`,
+        `Keep-alive ping failed for ${redactedTargetUrl}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -59,5 +60,21 @@ export class KeepAliveService {
 
       req.on("error", reject);
     });
+  }
+
+  private redactUrl(rawUrl: string): string {
+    try {
+      const url = new URL(rawUrl);
+
+      if (url.username || url.password) {
+        url.username = "***";
+        url.password = "***";
+      }
+
+      url.search = "";
+      return url.toString();
+    } catch {
+      return "[invalid-url]";
+    }
   }
 }

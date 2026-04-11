@@ -5,6 +5,7 @@ import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity
 import { Field } from "./entities/field.entity";
 import { FieldSlot } from "./entities/field-slot.entity";
 import { FieldSlotCronService } from "./cron/field-slot-cron.service";
+import { FieldSlotSyncService } from "./cron/field-slot-sync.service";
 import { FieldsController } from "./fields.controller";
 import { FieldsService } from "./fields.service";
 
@@ -18,7 +19,7 @@ import { FieldsService } from "./fields.service";
     ]),
   ],
   controllers: [FieldsController],
-  providers: [FieldsService, FieldSlotCronService],
+  providers: [FieldsService, FieldSlotCronService, FieldSlotSyncService],
   exports: [FieldsService],
 })
 export class FieldsModule {}

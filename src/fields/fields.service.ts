@@ -17,6 +17,7 @@ import {
 import { CreateFieldScheduleSettingsDto } from "./dto/create-field-schedule-settings.dto";
 import { CreateFieldSlotDto } from "./dto/create-field-slot.dto";
 import { FieldSlotGenerator } from "./cron/field-slot-generator";
+import { FieldSlotSyncService } from "./cron/field-slot-sync.service";
 import { FieldRuleBook } from "./entities/field-rule-book.entity";
 import { Field } from "./entities/field.entity";
 import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity";
@@ -34,6 +35,7 @@ export class FieldsService {
     private readonly fieldRuleBooksRepository: Repository<FieldRuleBook>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
+    private readonly fieldSlotSyncService: FieldSlotSyncService,
   ) {}
 
   async listAvailable() {
@@ -383,11 +385,16 @@ export class FieldsService {
       .getRepository(FieldScheduleSettings)
       .save(field.scheduleSettings);
 
+    await this.fieldSlotSyncService.syncFieldWindow(
+      fieldId,
+      0,
+      this.initialSlotWindowDays,
+    );
+
     return {
       scheduleSettings: savedSettings,
-      slotsUpdated: false,
-      message:
-        "Schedule settings updated. Existing slots were not re-generated.",
+      slotsUpdated: true,
+      message: "Schedule settings updated. Upcoming slots were synchronized.",
     };
   }
 
@@ -422,7 +429,18 @@ export class FieldsService {
     });
 
     try {
-      return await this.fieldRuleBooksRepository.save(ruleBook);
+      const savedRuleBook = await this.fieldRuleBooksRepository.save(ruleBook);
+
+      await this.fieldSlotSyncService.syncFieldWindow(
+        fieldId,
+        0,
+        this.initialSlotWindowDays,
+      );
+
+      return {
+        ruleBook: savedRuleBook,
+        slotsUpdated: true,
+      };
     } catch (error) {
       this.logger.error(
         `Failed to create rule book for fieldId=${fieldId}`,
@@ -650,15 +668,22 @@ export class FieldsService {
         );
       }
 
-      ruleConfig.specificSlots = specificSlots.map((slot) => ({
-        slotDate: slot.slotDate,
-        startTime: this.formatMinutesToTime(
-          this.parseTimeToMinutes(slot.startTime),
-        ),
-        endTime: this.formatMinutesToTime(
-          this.parseTimeToMinutes(slot.endTime),
-        ),
-      }));
+      ruleConfig.specificSlots = specificSlots.map((slot, index) => {
+        const startTimeMinutes = this.parseTimeToMinutes(slot.startTime);
+        const endTimeMinutes = this.parseTimeToMinutes(slot.endTime);
+
+        if (endTimeMinutes <= startTimeMinutes) {
+          throw new BadRequestException(
+            `specificSlots[${index}].endTime must be after specificSlots[${index}].startTime`,
+          );
+        }
+
+        return {
+          slotDate: slot.slotDate,
+          startTime: this.formatMinutesToTime(startTimeMinutes),
+          endTime: this.formatMinutesToTime(endTimeMinutes),
+        };
+      });
     }
 
     return {
