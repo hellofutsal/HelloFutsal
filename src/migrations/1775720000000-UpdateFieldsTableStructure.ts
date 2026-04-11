@@ -33,7 +33,11 @@ export class UpdateFieldsTableStructure1775720000000 implements MigrationInterfa
 
     await queryRunner.query(`
       UPDATE "fields"
-      SET "field_name" = COALESCE(NULLIF(BTRIM("field_name"), ''), BTRIM("venue_name"))
+      SET "field_name" = CONCAT(
+        COALESCE(NULLIF(BTRIM("venue_name"), ''), 'Field'),
+        ' #',
+        LEFT("id"::text, 8)
+      )
       WHERE "field_name" IS NULL OR BTRIM("field_name") = ''
     `);
     await queryRunner.query(

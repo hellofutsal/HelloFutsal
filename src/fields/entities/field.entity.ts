@@ -12,7 +12,6 @@ import { GroundOwnerAccount } from "../../auth/entities/ground-owner.entity";
 
 @Entity({ name: "fields" })
 @Index(["ownerId"])
-@Index(["ownerId", "venueName", "fieldName"], { unique: true })
 export class Field {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
