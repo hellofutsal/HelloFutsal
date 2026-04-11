@@ -5,12 +5,13 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   OneToOne,
   PrimaryGeneratedColumn,
-  OneToMany,
   UpdateDateColumn,
 } from "typeorm";
 import { GroundOwnerAccount } from "../../auth/entities/ground-owner.entity";
+import { FieldRuleBook } from "./field-rule-book.entity";
 import { FieldScheduleSettings } from "./field-schedule-settings.entity";
 import { FieldSlot } from "./field-slot.entity";
 
@@ -55,6 +56,9 @@ export class Field {
     (scheduleSettings) => scheduleSettings.field,
   )
   scheduleSettings?: FieldScheduleSettings;
+
+  @OneToMany(() => FieldRuleBook, (ruleBook) => ruleBook.field)
+  ruleBooks?: FieldRuleBook[];
 
   @OneToMany(() => FieldSlot, (slot) => slot.field)
   slots?: FieldSlot[];

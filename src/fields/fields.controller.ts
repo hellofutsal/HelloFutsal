@@ -15,6 +15,7 @@ import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { CreateFieldDto } from "./dto/create-field.dto";
+import { CreateFieldRuleBookDto } from "./dto/create-field-rule-book.dto";
 import { CreateFieldScheduleSettingsDto } from "./dto/create-field-schedule-settings.dto";
 import { CreateFieldSlotDto } from "./dto/create-field-slot.dto";
 import { FieldsService } from "./fields.service";
@@ -96,6 +97,17 @@ export class FieldsController {
     return this.fieldsService.createScheduleSettings(account, fieldId, dto);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post(":fieldId/rule-books")
+  createRuleBook(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Body() payload: CreateFieldRuleBookDto,
+  ) {
+    const dto = this.validateRuleBookDto(payload, "ruleBook");
+    return this.fieldsService.createFieldRuleBook(account, fieldId, dto);
+  }
+
   private validateDto(value: unknown, label: string): CreateFieldDto {
     const dto = plainToInstance(CreateFieldDto, value);
     const errors = validateSync(dto, {
@@ -135,6 +147,26 @@ export class FieldsController {
     label: string,
   ): CreateFieldScheduleSettingsDto {
     const dto = plainToInstance(CreateFieldScheduleSettingsDto, value);
+    const errors = validateSync(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    if (errors.length > 0) {
+      const message = errors
+        .flatMap((error) => Object.values(error.constraints ?? {}))
+        .join(", ");
+      throw new BadRequestException(`${label}: ${message}`);
+    }
+
+    return dto;
+  }
+
+  private validateRuleBookDto(
+    value: unknown,
+    label: string,
+  ): CreateFieldRuleBookDto {
+    const dto = plainToInstance(CreateFieldRuleBookDto, value);
     const errors = validateSync(dto, {
       whitelist: true,
       forbidNonWhitelisted: true,

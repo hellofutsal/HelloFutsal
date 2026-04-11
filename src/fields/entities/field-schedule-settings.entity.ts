@@ -32,6 +32,12 @@ export class FieldScheduleSettings {
   @Column({ name: "base_price", type: "numeric", precision: 12, scale: 2 })
   basePrice!: string;
 
+  @Column({ name: "opening_time", type: "time" })
+  openingTime!: string;
+
+  @Column({ name: "closing_time", type: "time" })
+  closingTime!: string;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 

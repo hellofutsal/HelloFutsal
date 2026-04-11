@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import { DataSource } from "typeorm";
 import { GroundOwnerAccount } from "./auth/entities/ground-owner.entity";
 import { UserAccount } from "./auth/entities/user.entity";
+import { FieldRuleBook } from "./fields/entities/field-rule-book.entity";
 import { Field } from "./fields/entities/field.entity";
 import { FieldScheduleSettings } from "./fields/entities/field-schedule-settings.entity";
 import { FieldSlot } from "./fields/entities/field-slot.entity";
@@ -69,6 +70,7 @@ export default new DataSource({
     GroundOwnerAccount,
     Field,
     FieldScheduleSettings,
+    FieldRuleBook,
     FieldSlot,
   ],
   migrations: [join(__dirname, "migrations", "*{.ts,.js}")],

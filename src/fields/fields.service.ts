@@ -10,8 +10,14 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Brackets, QueryFailedError, Repository } from "typeorm";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { CreateFieldDto } from "./dto/create-field.dto";
+import {
+  CreateFieldRuleBookDto,
+  RuleBookSlotSelectionType,
+} from "./dto/create-field-rule-book.dto";
 import { CreateFieldScheduleSettingsDto } from "./dto/create-field-schedule-settings.dto";
 import { CreateFieldSlotDto } from "./dto/create-field-slot.dto";
+import { FieldSlotGenerator } from "./cron/field-slot-generator";
+import { FieldRuleBook } from "./entities/field-rule-book.entity";
 import { Field } from "./entities/field.entity";
 import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity";
 import { FieldSlot } from "./entities/field-slot.entity";
@@ -23,6 +29,8 @@ export class FieldsService {
   constructor(
     @InjectRepository(Field)
     private readonly fieldsRepository: Repository<Field>,
+    @InjectRepository(FieldRuleBook)
+    private readonly fieldRuleBooksRepository: Repository<FieldRuleBook>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
   ) {}
@@ -268,7 +276,7 @@ export class FieldsService {
     );
 
     const generatedSlots = this.generateSlotsFromScheduleSettings(
-      this.getCurrentDateString(),
+      FieldSlotGenerator.getCurrentDateString(),
       normalizedSettings.openingTime,
       normalizedSettings.closingTime,
       normalizedSettings.slotDurationMin,
@@ -291,6 +299,8 @@ export class FieldsService {
         slotDurationMin: normalizedSettings.slotDurationMin,
         breakBetweenMin: normalizedSettings.breakBetweenMin,
         basePrice: normalizedSettings.basePrice,
+        openingTime: normalizedSettings.openingTime,
+        closingTime: normalizedSettings.closingTime,
       });
 
       const savedSettings = await settingsRepository.save(settings);
@@ -313,6 +323,54 @@ export class FieldsService {
         slots: savedSlots,
       };
     });
+  }
+
+  async createFieldRuleBook(
+    account: AuthenticatedAccount,
+    fieldId: string,
+    createFieldRuleBookDto: CreateFieldRuleBookDto,
+  ) {
+    this.ensureAdmin(account);
+
+    const field = await this.fieldsRepository.findOne({
+      where: { id: fieldId, ownerId: account.id },
+      relations: { ruleBooks: true },
+    });
+
+    if (!field) {
+      throw new NotFoundException("Field not found");
+    }
+
+    const normalizedRuleBook = this.normalizeCreateFieldRuleBookInput(
+      createFieldRuleBookDto,
+    );
+
+    const ruleBook = this.fieldRuleBooksRepository.create({
+      fieldId,
+      ruleName: normalizedRuleBook.ruleName,
+      slotSelectionType: normalizedRuleBook.slotSelectionType,
+      actionType: normalizedRuleBook.actionType,
+      value: normalizedRuleBook.value,
+      ruleConfig: normalizedRuleBook.ruleConfig,
+      isActive: true,
+    });
+
+    try {
+      return await this.fieldRuleBooksRepository.save(ruleBook);
+    } catch (error) {
+      this.logger.error(
+        `Failed to create rule book for fieldId=${fieldId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+
+      if (this.isUniqueConstraintViolation(error)) {
+        throw new ConflictException(
+          "Rule book name already exists for this field",
+        );
+      }
+
+      throw error;
+    }
   }
 
   private normalizeCreateFieldInput(createFieldDto: CreateFieldDto): {
@@ -463,13 +521,280 @@ export class FieldsService {
     };
   }
 
-  private getCurrentDateString(): string {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
+  private async generateSlotsForFieldDate(
+    field: Field,
+    slotDate: string,
+    weekday: string,
+  ): Promise<void> {
+    const scheduleSettings = field.scheduleSettings;
+    if (!scheduleSettings) {
+      return;
+    }
 
-    return `${year}-${month}-${day}`;
+    const generatedSlots = this.generateSlotsFromScheduleSettings(
+      slotDate,
+      scheduleSettings.openingTime,
+      scheduleSettings.closingTime,
+      scheduleSettings.slotDurationMin,
+      scheduleSettings.breakBetweenMin,
+      scheduleSettings.basePrice,
+    );
+
+    const existingSlots = await this.fieldSlotsRepository.find({
+      where: { fieldId: field.id, slotDate },
+    });
+
+    const existingSlotsByStartTime = new Map(
+      existingSlots.map((slot) => [slot.startTime, slot]),
+    );
+
+    const activeRuleBooks = (field.ruleBooks ?? []).filter(
+      (ruleBook) => ruleBook.isActive,
+    );
+
+    const specificRules = activeRuleBooks.filter(
+      (ruleBook) =>
+        ruleBook.slotSelectionType === RuleBookSlotSelectionType.SPECIFIC_SLOTS,
+    );
+    const timeRangeRules = activeRuleBooks.filter(
+      (ruleBook) =>
+        ruleBook.slotSelectionType === RuleBookSlotSelectionType.TIME_RANGE,
+    );
+    const allSlotRules = activeRuleBooks.filter(
+      (ruleBook) =>
+        ruleBook.slotSelectionType === RuleBookSlotSelectionType.ALL_SLOTS,
+    );
+
+    const slotEntities: FieldSlot[] = [];
+
+    for (const slot of generatedSlots) {
+      const resolvedPrice = this.resolveSlotPriceFromRules(
+        slot,
+        weekday,
+        slotDate,
+        specificRules,
+        timeRangeRules,
+        allSlotRules,
+        scheduleSettings.basePrice,
+      );
+
+      const existingSlot = existingSlotsByStartTime.get(slot.startTime);
+      if (existingSlot) {
+        if (existingSlot.status !== "booked") {
+          existingSlot.price = resolvedPrice;
+          existingSlot.endTime = slot.endTime;
+        }
+        slotEntities.push(existingSlot);
+        continue;
+      }
+
+      slotEntities.push(
+        this.fieldSlotsRepository.create({
+          fieldId: field.id,
+          slotDate,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          price: resolvedPrice,
+          status: "available",
+        }),
+      );
+    }
+
+    if (slotEntities.length === 0) {
+      return;
+    }
+
+    await this.fieldSlotsRepository.save(slotEntities);
+  }
+
+  private resolveSlotPriceFromRules(
+    slot: { startTime: string; endTime: string },
+    weekday: string,
+    slotDate: string,
+    specificRules: FieldRuleBook[],
+    timeRangeRules: FieldRuleBook[],
+    allSlotRules: FieldRuleBook[],
+    defaultPrice: string,
+  ): string {
+    const matchedSpecificRule = specificRules.find((ruleBook) => {
+      const specificSlots = this.getRuleBookSpecificSlots(ruleBook);
+      return specificSlots.some(
+        (specificSlot) =>
+          specificSlot.slotDate === slotDate &&
+          specificSlot.startTime === slot.startTime &&
+          specificSlot.endTime === slot.endTime,
+      );
+    });
+
+    if (matchedSpecificRule) {
+      return matchedSpecificRule.value;
+    }
+
+    const matchedTimeRangeRule = timeRangeRules.find((ruleBook) => {
+      const timeRange = this.getRuleBookTimeRange(ruleBook);
+      if (!timeRange.activeDays.includes(weekday)) {
+        return false;
+      }
+
+      return (
+        this.parseTimeToMinutes(slot.startTime) >=
+          this.parseTimeToMinutes(timeRange.startTime) &&
+        this.parseTimeToMinutes(slot.endTime) <=
+          this.parseTimeToMinutes(timeRange.endTime)
+      );
+    });
+
+    if (matchedTimeRangeRule) {
+      return matchedTimeRangeRule.value;
+    }
+
+    const matchedAllSlotRule = allSlotRules[0];
+    if (matchedAllSlotRule) {
+      return matchedAllSlotRule.value;
+    }
+
+    return defaultPrice;
+  }
+
+  private getRuleBookTimeRange(ruleBook: FieldRuleBook): {
+    startTime: string;
+    endTime: string;
+    activeDays: string[];
+  } {
+    const timeRange = ruleBook.ruleConfig.timeRange as
+      | { startTime?: string; endTime?: string; activeDays?: string[] }
+      | undefined;
+
+    if (!timeRange?.startTime || !timeRange.endTime || !timeRange.activeDays) {
+      throw new BadRequestException(
+        `Invalid time range configuration for rule book ${ruleBook.ruleName}`,
+      );
+    }
+
+    return {
+      startTime: timeRange.startTime,
+      endTime: timeRange.endTime,
+      activeDays: timeRange.activeDays,
+    };
+  }
+
+  private getRuleBookSpecificSlots(ruleBook: FieldRuleBook): Array<{
+    slotDate: string;
+    startTime: string;
+    endTime: string;
+  }> {
+    const specificSlots = ruleBook.ruleConfig.specificSlots as
+      | Array<{
+          slotDate?: string;
+          startTime?: string;
+          endTime?: string;
+        }>
+      | undefined;
+
+    if (!specificSlots) {
+      return [];
+    }
+
+    return specificSlots.filter(
+      (
+        slot,
+      ): slot is { slotDate: string; startTime: string; endTime: string } =>
+        Boolean(slot.slotDate && slot.startTime && slot.endTime),
+    );
+  }
+
+  private normalizeCreateFieldRuleBookInput(
+    createFieldRuleBookDto: CreateFieldRuleBookDto,
+  ): {
+    ruleName: string;
+    slotSelectionType: RuleBookSlotSelectionType;
+    actionType: CreateFieldRuleBookDto["actionType"];
+    value: string;
+    ruleConfig: Record<string, unknown>;
+  } {
+    const ruleName = createFieldRuleBookDto.ruleName.trim();
+    if (ruleName.length < 2 || ruleName.length > 120) {
+      throw new BadRequestException(
+        "ruleName must be longer than or equal to 2 characters",
+      );
+    }
+
+    const value = Number(createFieldRuleBookDto.value);
+    if (Number.isNaN(value) || value < 0) {
+      throw new BadRequestException("value must be a valid positive number");
+    }
+
+    const ruleConfig: Record<string, unknown> = {
+      actionType: createFieldRuleBookDto.actionType,
+      value: value.toFixed(2),
+    };
+
+    if (
+      createFieldRuleBookDto.slotSelectionType ===
+      RuleBookSlotSelectionType.TIME_RANGE
+    ) {
+      const timeRange = createFieldRuleBookDto.timeRange;
+      if (!timeRange) {
+        throw new BadRequestException(
+          "timeRange is required for timeRange rules",
+        );
+      }
+
+      const startTimeMinutes = this.parseTimeToMinutes(timeRange.startTime);
+      const endTimeMinutes = this.parseTimeToMinutes(timeRange.endTime);
+      if (endTimeMinutes <= startTimeMinutes) {
+        throw new BadRequestException(
+          "timeRange.endTime must be after timeRange.startTime",
+        );
+      }
+
+      ruleConfig.timeRange = {
+        startTime: this.formatMinutesToTime(startTimeMinutes),
+        endTime: this.formatMinutesToTime(endTimeMinutes),
+        activeDays: timeRange.activeDays,
+      };
+    }
+
+    if (
+      createFieldRuleBookDto.slotSelectionType ===
+      RuleBookSlotSelectionType.SPECIFIC_SLOTS
+    ) {
+      const specificSlots = createFieldRuleBookDto.specificSlots;
+      if (!specificSlots || specificSlots.length === 0) {
+        throw new BadRequestException(
+          "specificSlots are required for specificSlots rules",
+        );
+      }
+
+      ruleConfig.specificSlots = specificSlots.map((slot) => ({
+        slotDate: slot.slotDate,
+        startTime: this.formatMinutesToTime(
+          this.parseTimeToMinutes(slot.startTime),
+        ),
+        endTime: this.formatMinutesToTime(
+          this.parseTimeToMinutes(slot.endTime),
+        ),
+      }));
+    }
+
+    return {
+      ruleName,
+      slotSelectionType: createFieldRuleBookDto.slotSelectionType,
+      actionType: createFieldRuleBookDto.actionType,
+      value: value.toFixed(2),
+      ruleConfig,
+    };
+  }
+
+  private normalizeSlotPrice(
+    price: number | undefined,
+    basePrice: string,
+  ): string {
+    if (price === undefined) {
+      return basePrice;
+    }
+
+    return price.toFixed(2);
   }
 
   private generateSlotsFromScheduleSettings(
@@ -485,69 +810,22 @@ export class FieldsService {
     endTime: string;
     price: string;
   }> {
-    const slots: Array<{
-      slotDate: string;
-      startTime: string;
-      endTime: string;
-      price: string;
-    }> = [];
-
-    let currentStart = this.parseTimeToMinutes(openingTime);
-    const closingMinutes = this.parseTimeToMinutes(closingTime);
-
-    while (currentStart + slotDurationMin <= closingMinutes) {
-      const currentEnd = currentStart + slotDurationMin;
-      slots.push({
-        slotDate,
-        startTime: this.formatMinutesToTime(currentStart),
-        endTime: this.formatMinutesToTime(currentEnd),
-        price: basePrice,
-      });
-
-      currentStart = currentEnd + breakBetweenMin;
-    }
-
-    return slots;
-  }
-
-  private normalizeSlotPrice(
-    price: number | undefined,
-    basePrice: string,
-  ): string {
-    if (price === undefined) {
-      return basePrice;
-    }
-
-    return price.toFixed(2);
+    return FieldSlotGenerator.generateSlotsFromScheduleSettings(
+      slotDate,
+      openingTime,
+      closingTime,
+      slotDurationMin,
+      breakBetweenMin,
+      basePrice,
+    );
   }
 
   private parseTimeToMinutes(time: string): number {
-    const normalizedTime = time.trim();
-    const [hoursText, minutesText] = normalizedTime.split(":");
-    const hours = Number(hoursText);
-    const minutes = Number(minutesText);
-
-    if (
-      Number.isNaN(hours) ||
-      Number.isNaN(minutes) ||
-      hours < 0 ||
-      hours > 23 ||
-      minutes < 0 ||
-      minutes > 59
-    ) {
-      throw new BadRequestException("Invalid time format");
-    }
-
-    return hours * 60 + minutes;
+    return FieldSlotGenerator.parseTimeToMinutes(time);
   }
 
   private formatMinutesToTime(totalMinutes: number): string {
-    const hours = Math.floor(totalMinutes / 60)
-      .toString()
-      .padStart(2, "0");
-    const minutes = (totalMinutes % 60).toString().padStart(2, "0");
-
-    return `${hours}:${minutes}`;
+    return FieldSlotGenerator.formatMinutesToTime(totalMinutes);
   }
 
   private async findExistingSlotsByField(
