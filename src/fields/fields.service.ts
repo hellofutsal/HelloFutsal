@@ -25,6 +25,7 @@ import { FieldSlot } from "./entities/field-slot.entity";
 @Injectable()
 export class FieldsService {
   private readonly logger = new Logger(FieldsService.name);
+  private readonly initialSlotWindowDays = this.resolveInitialSlotWindowDays();
 
   constructor(
     @InjectRepository(Field)
@@ -275,14 +276,20 @@ export class FieldsService {
       createFieldScheduleSettingsDto,
     );
 
-    const generatedSlots = this.generateSlotsFromScheduleSettings(
-      FieldSlotGenerator.getCurrentDateString(),
-      normalizedSettings.openingTime,
-      normalizedSettings.closingTime,
-      normalizedSettings.slotDurationMin,
-      normalizedSettings.breakBetweenMin,
-      normalizedSettings.basePrice,
-    );
+    const generatedSlots = Array.from(
+      { length: this.initialSlotWindowDays },
+      (_, dayOffset) => {
+        const slotDate = FieldSlotGenerator.getDateStringFromOffset(dayOffset);
+        return this.generateSlotsFromScheduleSettings(
+          slotDate,
+          normalizedSettings.openingTime,
+          normalizedSettings.closingTime,
+          normalizedSettings.slotDurationMin,
+          normalizedSettings.breakBetweenMin,
+          normalizedSettings.basePrice,
+        );
+      },
+    ).flat();
 
     if (generatedSlots.length === 0) {
       throw new BadRequestException(
@@ -915,6 +922,24 @@ export class FieldsService {
     if (account.role !== "admin") {
       throw new ForbiddenException("Only admins can manage fields");
     }
+  }
+
+  private resolveInitialSlotWindowDays(): number {
+    const rawValue = process.env.INITIAL_SLOT_WINDOW_DAYS;
+
+    if (!rawValue) {
+      return 30;
+    }
+
+    const parsedValue = Number(rawValue);
+    if (!Number.isInteger(parsedValue) || parsedValue < 1) {
+      this.logger.warn(
+        `Invalid INITIAL_SLOT_WINDOW_DAYS value "${rawValue}". Falling back to 30.`,
+      );
+      return 30;
+    }
+
+    return parsedValue;
   }
 
   private isUniqueConstraintViolation(error: unknown): boolean {
