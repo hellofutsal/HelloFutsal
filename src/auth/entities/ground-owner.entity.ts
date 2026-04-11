@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   Entity,
@@ -9,6 +10,7 @@ import {
 import { Field } from "../../fields/entities/field.entity";
 
 @Entity({ name: "admins" })
+@Check(`"email" IS NOT NULL OR "mobile_number" IS NOT NULL`)
 export class GroundOwnerAccount {
   @PrimaryGeneratedColumn("uuid")
   id!: string;

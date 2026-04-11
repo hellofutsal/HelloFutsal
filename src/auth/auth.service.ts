@@ -218,19 +218,12 @@ export class AuthService {
       );
     }
 
-    const whereClauses = [];
-    if (email) {
-      whereClauses.push({ email });
-    }
-    if (mobileNumber) {
-      whereClauses.push({ mobileNumber });
-    }
-    if (username) {
-      whereClauses.push({ username });
-    }
-
     const user = await this.userAccountsRepository.findOne({
-      where: whereClauses,
+      where: {
+        ...(email ? { email } : {}),
+        ...(mobileNumber ? { mobileNumber } : {}),
+        ...(username ? { username } : {}),
+      },
     });
 
     if (!user) {
@@ -444,16 +437,11 @@ export class AuthService {
       );
     }
 
-    const whereClauses = [];
-    if (email) {
-      whereClauses.push({ email });
-    }
-    if (mobileNumber) {
-      whereClauses.push({ mobileNumber });
-    }
-
     const admin = await this.groundOwnerAccountsRepository.findOne({
-      where: whereClauses,
+      where: {
+        ...(email ? { email } : {}),
+        ...(mobileNumber ? { mobileNumber } : {}),
+      },
     });
 
     if (!admin) {
