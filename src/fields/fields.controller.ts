@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Param,
   ParseArrayPipe,
   ParseUUIDPipe,
@@ -10,7 +11,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { plainToInstance } from "class-transformer";
-import { validateSync } from "class-validator";
+import { ValidationError, validateSync } from "class-validator";
 import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
@@ -98,6 +99,17 @@ export class FieldsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Patch(":fieldId/schedule-settings")
+  updateScheduleSettings(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Body() payload: CreateFieldScheduleSettingsDto,
+  ) {
+    const dto = this.validateScheduleSettingsDto(payload, "scheduleSettings");
+    return this.fieldsService.updateScheduleSettings(account, fieldId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post(":fieldId/rule-books")
   createRuleBook(
     @CurrentAccount() account: AuthenticatedAccount,
@@ -116,9 +128,7 @@ export class FieldsController {
     });
 
     if (errors.length > 0) {
-      const message = errors
-        .flatMap((error) => Object.values(error.constraints ?? {}))
-        .join(", ");
+      const message = this.collectValidationMessages(errors).join(", ");
       throw new BadRequestException(`${label}: ${message}`);
     }
 
@@ -133,9 +143,7 @@ export class FieldsController {
     });
 
     if (errors.length > 0) {
-      const message = errors
-        .flatMap((error) => Object.values(error.constraints ?? {}))
-        .join(", ");
+      const message = this.collectValidationMessages(errors).join(", ");
       throw new BadRequestException(`${label}: ${message}`);
     }
 
@@ -153,9 +161,7 @@ export class FieldsController {
     });
 
     if (errors.length > 0) {
-      const message = errors
-        .flatMap((error) => Object.values(error.constraints ?? {}))
-        .join(", ");
+      const message = this.collectValidationMessages(errors).join(", ");
       throw new BadRequestException(`${label}: ${message}`);
     }
 
@@ -173,12 +179,37 @@ export class FieldsController {
     });
 
     if (errors.length > 0) {
-      const message = errors
-        .flatMap((error) => Object.values(error.constraints ?? {}))
-        .join(", ");
+      const message = this.collectValidationMessages(errors).join(", ");
       throw new BadRequestException(`${label}: ${message}`);
     }
 
     return dto;
+  }
+
+  private collectValidationMessages(
+    errors: ValidationError[],
+    parentPath = "",
+  ): string[] {
+    const messages: string[] = [];
+
+    for (const error of errors) {
+      const propertyPath = parentPath
+        ? `${parentPath}.${error.property}`
+        : error.property;
+
+      if (error.constraints) {
+        for (const message of Object.values(error.constraints)) {
+          messages.push(`${propertyPath}: ${message}`);
+        }
+      }
+
+      if (error.children && error.children.length > 0) {
+        messages.push(
+          ...this.collectValidationMessages(error.children, propertyPath),
+        );
+      }
+    }
+
+    return messages;
   }
 }

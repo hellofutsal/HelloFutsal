@@ -29,13 +29,33 @@ export class FieldSlotCronService {
       relations: { scheduleSettings: true, ruleBooks: true },
     });
 
+    this.logger.log(
+      `Midnight slot cron started for date=${targetDate} weekday=${targetWeekday}. Active fields=${fields.length}`,
+    );
+
+    let processedCount = 0;
+    let failedCount = 0;
+
     for (const field of fields) {
       if (!field.scheduleSettings) {
         continue;
       }
 
-      await this.generateSlotsForFieldDate(field, targetDate, targetWeekday);
+      try {
+        await this.generateSlotsForFieldDate(field, targetDate, targetWeekday);
+        processedCount += 1;
+      } catch (error) {
+        failedCount += 1;
+        this.logger.error(
+          `Failed to generate slots for fieldId=${field.id} on ${targetDate}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
     }
+
+    this.logger.log(
+      `Midnight slot cron finished for date=${targetDate}. Processed=${processedCount}, Failed=${failedCount}`,
+    );
   }
 
   private async generateSlotsForFieldDate(
@@ -123,7 +143,7 @@ export class FieldSlotCronService {
 
     await this.fieldSlotsRepository.save(slotEntities);
 
-    this.logger.debug(
+    this.logger.log(
       `Generated ${slotEntities.length} slots for fieldId=${field.id} on ${slotDate}`,
     );
   }
