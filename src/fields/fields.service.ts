@@ -278,20 +278,14 @@ export class FieldsService {
       createFieldScheduleSettingsDto,
     );
 
-    const generatedSlots = Array.from(
-      { length: this.initialSlotWindowDays },
-      (_, dayOffset) => {
-        const slotDate = FieldSlotGenerator.getDateStringFromOffset(dayOffset);
-        return this.generateSlotsFromScheduleSettings(
-          slotDate,
-          normalizedSettings.openingTime,
-          normalizedSettings.closingTime,
-          normalizedSettings.slotDurationMin,
-          normalizedSettings.breakBetweenMin,
-          normalizedSettings.basePrice,
-        );
-      },
-    ).flat();
+    const generatedSlots = this.generateSlotsFromScheduleSettings(
+      FieldSlotGenerator.getCurrentDateString(),
+      normalizedSettings.openingTime,
+      normalizedSettings.closingTime,
+      normalizedSettings.slotDurationMin,
+      normalizedSettings.breakBetweenMin,
+      normalizedSettings.basePrice,
+    );
 
     if (generatedSlots.length === 0) {
       throw new BadRequestException(
@@ -299,39 +293,47 @@ export class FieldsService {
       );
     }
 
-    return await this.fieldsRepository.manager.transaction(async (manager) => {
-      const settingsRepository = manager.getRepository(FieldScheduleSettings);
-      const slotsRepository = manager.getRepository(FieldSlot);
+    const savedSettings = await this.fieldsRepository.manager.transaction(
+      async (manager) => {
+        const settingsRepository = manager.getRepository(FieldScheduleSettings);
 
-      const settings = settingsRepository.create({
-        fieldId,
-        slotDurationMin: normalizedSettings.slotDurationMin,
-        breakBetweenMin: normalizedSettings.breakBetweenMin,
-        basePrice: normalizedSettings.basePrice,
-        openingTime: normalizedSettings.openingTime,
-        closingTime: normalizedSettings.closingTime,
-      });
-
-      const savedSettings = await settingsRepository.save(settings);
-
-      const slotEntities = generatedSlots.map((slot) =>
-        slotsRepository.create({
+        const settings = settingsRepository.create({
           fieldId,
-          slotDate: slot.slotDate,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-          price: slot.price,
-          status: "available",
-        }),
-      );
+          slotDurationMin: normalizedSettings.slotDurationMin,
+          breakBetweenMin: normalizedSettings.breakBetweenMin,
+          basePrice: normalizedSettings.basePrice,
+          openingTime: normalizedSettings.openingTime,
+          closingTime: normalizedSettings.closingTime,
+        });
 
-      const savedSlots = await slotsRepository.save(slotEntities);
+        return settingsRepository.save(settings);
+      },
+    );
 
-      return {
-        scheduleSettings: savedSettings,
-        slots: savedSlots,
-      };
-    });
+    await this.fieldSlotSyncService.syncFieldWindow(
+      fieldId,
+      0,
+      this.initialSlotWindowDays,
+    );
+
+    const rangeStart = FieldSlotGenerator.getDateStringFromOffset(0);
+    const rangeEnd = FieldSlotGenerator.getDateStringFromOffset(
+      this.initialSlotWindowDays - 1,
+    );
+
+    const syncedSlots = await this.fieldSlotsRepository
+      .createQueryBuilder("slot")
+      .where("slot.field_id = :fieldId", { fieldId })
+      .andWhere("slot.slot_date >= :rangeStart", { rangeStart })
+      .andWhere("slot.slot_date <= :rangeEnd", { rangeEnd })
+      .orderBy("slot.slot_date", "ASC")
+      .addOrderBy("slot.start_time", "ASC")
+      .getMany();
+
+    return {
+      scheduleSettings: savedSettings,
+      slots: syncedSlots,
+    };
   }
 
   async updateScheduleSettings(
@@ -407,11 +409,17 @@ export class FieldsService {
 
     const field = await this.fieldsRepository.findOne({
       where: { id: fieldId, ownerId: account.id },
-      relations: { ruleBooks: true },
+      relations: { ruleBooks: true, scheduleSettings: true },
     });
 
     if (!field) {
       throw new NotFoundException("Field not found");
+    }
+
+    if (!field.scheduleSettings) {
+      throw new BadRequestException(
+        "Schedule settings must be created before creating rule books",
+      );
     }
 
     const normalizedRuleBook = this.normalizeCreateFieldRuleBookInput(
