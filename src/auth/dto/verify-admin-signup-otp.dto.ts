@@ -1,8 +1,9 @@
-import { IsEmail, IsString, Length } from "class-validator";
+import { IsDefined, IsString, IsUUID, Length } from "class-validator";
 
 export class VerifyAdminSignupOtpDto {
-  @IsEmail()
-  email!: string;
+  @IsDefined({ message: "requestId is required" })
+  @IsUUID()
+  requestId!: string;
 
   @IsString()
   @Length(6, 6)

@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   Entity,
@@ -9,6 +10,7 @@ import {
 import { Field } from "../../fields/entities/field.entity";
 
 @Entity({ name: "admins" })
+@Check(`"email" IS NOT NULL OR "mobile_number" IS NOT NULL`)
 export class GroundOwnerAccount {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
@@ -19,8 +21,11 @@ export class GroundOwnerAccount {
   @Column({ name: "ground_name", nullable: true })
   groundName?: string;
 
-  @Column({ unique: true })
-  email!: string;
+  @Column({ unique: true, nullable: true })
+  email?: string;
+
+  @Column({ name: "mobile_number", unique: true, nullable: true })
+  mobileNumber?: string;
 
   @Column({ name: "password_hash" })
   passwordHash!: string;

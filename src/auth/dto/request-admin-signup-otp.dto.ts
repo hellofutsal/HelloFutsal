@@ -1,18 +1,17 @@
 import {
-  IsDefined,
   IsEmail,
   IsString,
+  Matches,
   MinLength,
   ValidateIf,
 } from "class-validator";
 import { Transform } from "class-transformer";
+import { ExactlyOneOf } from "../validators/exactly-one-of.validator";
 
 export class RequestAdminSignupOtpDto {
-  @ValidateIf(
-    (requestAdminSignupOtpDto: RequestAdminSignupOtpDto) =>
-      !requestAdminSignupOtpDto.username && !requestAdminSignupOtpDto.ownerName,
-  )
-  @IsDefined({ message: "Either username or ownerName is required" })
+  @ExactlyOneOf(["username", "ownerName"], {
+    message: "Provide exactly one of username or ownerName",
+  })
   readonly displayName?: string;
 
   @ValidateIf((value: RequestAdminSignupOtpDto) => !value.ownerName)
@@ -27,8 +26,22 @@ export class RequestAdminSignupOtpDto {
   @MinLength(1)
   ownerName?: string;
 
+  @ExactlyOneOf(["email", "mobileNumber"], {
+    message: "Provide exactly one of email or mobileNumber",
+  })
+  readonly identifier?: string;
+
+  @ValidateIf((value: RequestAdminSignupOtpDto) => value.email !== undefined)
   @IsEmail()
-  email!: string;
+  email?: string;
+
+  @ValidateIf(
+    (value: RequestAdminSignupOtpDto) => value.mobileNumber !== undefined,
+  )
+  @IsString()
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
+  @Matches(/^\+?[0-9]{7,15}$/)
+  mobileNumber?: string;
 
   @IsString()
   @MinLength(6)

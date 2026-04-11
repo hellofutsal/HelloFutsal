@@ -94,27 +94,8 @@ export class AuthService {
   }
 
   async verifyUserSignupOtp(verifyUserSignupOtpDto: VerifyUserSignupOtpDto) {
-    const email = verifyUserSignupOtpDto.email
-      ? this.normalizeEmail(verifyUserSignupOtpDto.email)
-      : undefined;
-    const mobileNumber = verifyUserSignupOtpDto.mobileNumber
-      ? this.normalizeMobileNumber(verifyUserSignupOtpDto.mobileNumber)
-      : undefined;
-
-    if (!email && !mobileNumber) {
-      throw new BadRequestException(
-        "Either email or mobile number is required",
-      );
-    }
-
-    const identifier = email ?? mobileNumber;
-    if (!identifier) {
-      throw new BadRequestException(
-        "Either email or mobile number is required",
-      );
-    }
     const pendingRequest = await this.signupOtpRequestsRepository.findOne({
-      where: { identifier, accountType: "user" },
+      where: { id: verifyUserSignupOtpDto.requestId, accountType: "user" },
     });
 
     if (!pendingRequest) {
@@ -123,7 +104,7 @@ export class AuthService {
 
     if (pendingRequest.expiresAt.getTime() < Date.now()) {
       await this.signupOtpRequestsRepository.delete({
-        identifier,
+        id: pendingRequest.id,
         accountType: "user",
       });
       throw new BadRequestException("OTP expired");
@@ -140,7 +121,7 @@ export class AuthService {
 
       if (pendingRequest.attempts >= 5) {
         await this.signupOtpRequestsRepository.delete({
-          identifier,
+          id: pendingRequest.id,
           accountType: "user",
         });
       }
@@ -154,6 +135,8 @@ export class AuthService {
         const userRepository = manager.getRepository(UserAccount);
         const adminRepository = manager.getRepository(GroundOwnerAccount);
         const otpRequestRepository = manager.getRepository(SignupOtpRequest);
+        const requestId = pendingRequest.id;
+        const identifier = pendingRequest.identifier;
 
         const username = pendingRequest.displayName;
         if (!username) {
@@ -196,7 +179,7 @@ export class AuthService {
 
         const createdUser = await userRepository.save(user);
         await otpRequestRepository.delete({
-          identifier,
+          id: requestId,
           accountType: "user",
         });
         return createdUser;
@@ -235,19 +218,12 @@ export class AuthService {
       );
     }
 
-    const whereClauses = [];
-    if (email) {
-      whereClauses.push({ email });
-    }
-    if (mobileNumber) {
-      whereClauses.push({ mobileNumber });
-    }
-    if (username) {
-      whereClauses.push({ username });
-    }
-
     const user = await this.userAccountsRepository.findOne({
-      where: whereClauses,
+      where: {
+        ...(email ? { email } : {}),
+        ...(mobileNumber ? { mobileNumber } : {}),
+        ...(username ? { username } : {}),
+      },
     });
 
     if (!user) {
@@ -276,21 +252,48 @@ export class AuthService {
       throw new BadRequestException("Either username or ownerName is required");
     }
 
-    const email = this.normalizeEmail(requestAdminSignupOtpDto.email);
-    await this.ensureEmailIsAvailable(email);
+    const email = requestAdminSignupOtpDto.email
+      ? this.normalizeEmail(requestAdminSignupOtpDto.email)
+      : undefined;
+    const mobileNumber = requestAdminSignupOtpDto.mobileNumber
+      ? this.normalizeMobileNumber(requestAdminSignupOtpDto.mobileNumber)
+      : undefined;
+
+    if (!email && !mobileNumber) {
+      throw new BadRequestException(
+        "Either email or mobile number is required",
+      );
+    }
+
+    if (email) {
+      await this.ensureEmailIsAvailable(email);
+    }
+
+    if (mobileNumber) {
+      await this.ensureMobileIsAvailable(mobileNumber);
+    }
 
     const otp = this.generateOtp();
 
+    const identifier = email ?? mobileNumber;
+    if (!identifier) {
+      throw new BadRequestException(
+        "Either email or mobile number is required",
+      );
+    }
+    const identifierType = email ? "email" : "mobile";
+
     await this.signupOtpRequestsRepository.delete({
-      identifier: email,
+      identifier,
       accountType: "admin",
     });
 
     const pendingRequest = this.signupOtpRequestsRepository.create({
-      identifier: email,
-      identifierType: "email",
+      identifier,
+      identifierType,
       accountType: "admin",
       displayName: ownerName,
+      mobileNumber,
       passwordHash: await this.hashPassword(requestAdminSignupOtpDto.password),
       otpHash: await this.hashPassword(otp),
       rawOtp: this.shouldStoreRawOtp() ? otp : null,
@@ -303,7 +306,9 @@ export class AuthService {
 
     const response: any = {
       requestId: savedRequest.id,
-      email: savedRequest.identifier,
+      identifier: savedRequest.identifier,
+      identifierType: savedRequest.identifierType,
+      mobileNumber: savedRequest.mobileNumber,
       expiresAt: savedRequest.expiresAt,
     };
 
@@ -311,9 +316,8 @@ export class AuthService {
   }
 
   async verifyAdminSignupOtp(verifyAdminSignupOtpDto: VerifyAdminSignupOtpDto) {
-    const email = this.normalizeEmail(verifyAdminSignupOtpDto.email);
     const pendingRequest = await this.signupOtpRequestsRepository.findOne({
-      where: { identifier: email, accountType: "admin" },
+      where: { id: verifyAdminSignupOtpDto.requestId, accountType: "admin" },
     });
 
     if (!pendingRequest) {
@@ -322,7 +326,7 @@ export class AuthService {
 
     if (pendingRequest.expiresAt.getTime() < Date.now()) {
       await this.signupOtpRequestsRepository.delete({
-        identifier: email,
+        id: pendingRequest.id,
         accountType: "admin",
       });
       throw new BadRequestException("OTP expired");
@@ -339,7 +343,7 @@ export class AuthService {
 
       if (pendingRequest.attempts >= 5) {
         await this.signupOtpRequestsRepository.delete({
-          identifier: email,
+          id: pendingRequest.id,
           accountType: "admin",
         });
       }
@@ -353,32 +357,58 @@ export class AuthService {
         const userRepository = manager.getRepository(UserAccount);
         const adminRepository = manager.getRepository(GroundOwnerAccount);
         const otpRequestRepository = manager.getRepository(SignupOtpRequest);
+        const requestId = pendingRequest.id;
+        const email =
+          pendingRequest.identifierType === "email"
+            ? this.normalizeEmail(pendingRequest.identifier)
+            : undefined;
+        const mobileNumber =
+          pendingRequest.identifierType === "mobile"
+            ? this.normalizeMobileNumber(pendingRequest.identifier)
+            : undefined;
 
-        const [existingUser, existingAdmin] = await Promise.all([
-          userRepository.findOne({ where: { email } }),
-          adminRepository.findOne({ where: { email } }),
-        ]);
+        if (email) {
+          const [existingUserByEmail, existingAdminByEmail] = await Promise.all(
+            [
+              userRepository.findOne({ where: { email } }),
+              adminRepository.findOne({ where: { email } }),
+            ],
+          );
 
-        if (existingUser || existingAdmin) {
-          throw new ConflictException("Email already exists");
+          if (existingUserByEmail || existingAdminByEmail) {
+            throw new ConflictException("Email already exists");
+          }
+        }
+
+        if (mobileNumber) {
+          const [existingUserByMobile, existingAdminByMobile] =
+            await Promise.all([
+              userRepository.findOne({ where: { mobileNumber } }),
+              adminRepository.findOne({ where: { mobileNumber } }),
+            ]);
+
+          if (existingUserByMobile || existingAdminByMobile) {
+            throw new ConflictException("Mobile number already exists");
+          }
         }
 
         const admin = adminRepository.create({
           ownerName: pendingRequest.displayName,
           email,
+          mobileNumber,
           passwordHash: pendingRequest.passwordHash,
         });
 
         const createdAdmin = await adminRepository.save(admin);
         await otpRequestRepository.delete({
-          identifier: email,
+          id: requestId,
           accountType: "admin",
         });
         return createdAdmin;
       });
     } catch (error) {
       if (this.isUniqueConstraintViolation(error)) {
-        throw new ConflictException("Email already exists");
+        throw new ConflictException("Account already exists");
       }
       throw error;
     }
@@ -386,6 +416,7 @@ export class AuthService {
     return this.buildAuthResponse({
       id: savedAdmin.id,
       email: savedAdmin.email,
+      mobileNumber: savedAdmin.mobileNumber,
       role: "admin",
       name: savedAdmin.ownerName,
       groundName: savedAdmin.groundName,
@@ -393,12 +424,24 @@ export class AuthService {
   }
 
   async loginAdmin(loginDto: LoginDto) {
-    if (!loginDto.email) {
-      throw new BadRequestException("Email is required for admin login");
+    const email = loginDto.email
+      ? this.normalizeEmail(loginDto.email)
+      : undefined;
+    const mobileNumber = loginDto.mobileNumber
+      ? this.normalizeMobileNumber(loginDto.mobileNumber)
+      : undefined;
+
+    if (!email && !mobileNumber) {
+      throw new BadRequestException(
+        "Email or mobile number is required for admin login",
+      );
     }
 
     const admin = await this.groundOwnerAccountsRepository.findOne({
-      where: { email: this.normalizeEmail(loginDto.email) },
+      where: {
+        ...(email ? { email } : {}),
+        ...(mobileNumber ? { mobileNumber } : {}),
+      },
     });
 
     if (!admin) {
@@ -409,6 +452,7 @@ export class AuthService {
     return this.buildAuthResponse({
       id: admin.id,
       email: admin.email,
+      mobileNumber: admin.mobileNumber,
       role: "admin",
       name: admin.ownerName,
       groundName: admin.groundName,
@@ -427,11 +471,16 @@ export class AuthService {
   }
 
   private async ensureMobileIsAvailable(mobileNumber: string): Promise<void> {
-    const user = await this.userAccountsRepository.findOne({
-      where: { mobileNumber },
-    });
+    const [user, admin] = await Promise.all([
+      this.userAccountsRepository.findOne({
+        where: { mobileNumber },
+      }),
+      this.groundOwnerAccountsRepository.findOne({
+        where: { mobileNumber },
+      }),
+    ]);
 
-    if (user) {
+    if (user || admin) {
       throw new ConflictException("Mobile number already exists");
     }
   }

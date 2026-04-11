@@ -25,6 +25,9 @@ export class SignupOtpRequest {
   @Column({ name: "display_name", nullable: true })
   displayName?: string;
 
+  @Column({ name: "mobile_number", nullable: true })
+  mobileNumber?: string;
+
   @Column({ name: "password_hash" })
   passwordHash!: string;
 

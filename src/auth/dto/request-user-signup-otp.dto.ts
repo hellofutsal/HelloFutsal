@@ -1,5 +1,4 @@
 import {
-  IsDefined,
   IsEmail,
   IsString,
   Matches,
@@ -7,13 +6,12 @@ import {
   ValidateIf,
 } from "class-validator";
 import { Transform } from "class-transformer";
+import { ExactlyOneOf } from "../validators/exactly-one-of.validator";
 
 export class RequestUserSignupOtpDto {
-  @ValidateIf(
-    (requestUserSignupOtpDto: RequestUserSignupOtpDto) =>
-      !requestUserSignupOtpDto.email && !requestUserSignupOtpDto.mobileNumber,
-  )
-  @IsDefined({ message: "Either email or mobile number is required" })
+  @ExactlyOneOf(["email", "mobileNumber"], {
+    message: "Provide exactly one of email or mobileNumber",
+  })
   readonly identifier?: string;
 
   @ValidateIf((value: RequestUserSignupOtpDto) => !value.mobileNumber)
