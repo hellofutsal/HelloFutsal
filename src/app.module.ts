@@ -7,6 +7,8 @@ import { AuthModule } from "./auth/auth.module";
 import { GroundOwnerAccount } from "./auth/entities/ground-owner.entity";
 import { UserAccount } from "./auth/entities/user.entity";
 import { Field } from "./fields/entities/field.entity";
+import { FieldScheduleSettings } from "./fields/entities/field-schedule-settings.entity";
+import { FieldSlot } from "./fields/entities/field-slot.entity";
 import { FieldsModule } from "./fields/fields.module";
 
 function resolveSslConfig(configService: ConfigService, sslMode: string) {
@@ -111,7 +113,13 @@ function getDatabaseConfig(configService: ConfigService) {
           database: dbConfig.database,
           ssl: dbConfig.ssl,
           extra: dbConfig.extra,
-          entities: [UserAccount, GroundOwnerAccount, Field],
+          entities: [
+            UserAccount,
+            GroundOwnerAccount,
+            Field,
+            FieldScheduleSettings,
+            FieldSlot,
+          ],
           autoLoadEntities: true,
           migrations: [join(__dirname, "migrations", "*{.ts,.js}")],
           migrationsRun:
