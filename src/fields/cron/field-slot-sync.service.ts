@@ -176,6 +176,131 @@ export class FieldSlotSyncService {
     }
   }
 
+  async retireOldestActiveSlotDate(
+    fieldId: string,
+  ): Promise<string | undefined> {
+    const oldestSlot = await this.fieldSlotsRepository
+      .createQueryBuilder("slot")
+      .select("slot.slot_date", "slotDate")
+      .where("slot.field_id = :fieldId", { fieldId })
+      .andWhere("slot.status != :blockedStatus", { blockedStatus: "blocked" })
+      .orderBy("slot.slot_date", "ASC")
+      .getRawOne<{ slotDate: string }>();
+
+    if (!oldestSlot?.slotDate) {
+      return undefined;
+    }
+
+    await this.fieldSlotsRepository.manager.transaction(async (manager) => {
+      const slotRepository = manager.getRepository(FieldSlot);
+
+      const slotsToRetire = await slotRepository
+        .createQueryBuilder("slot")
+        .where("slot.field_id = :fieldId", { fieldId })
+        .andWhere("slot.slot_date = :slotDate", {
+          slotDate: oldestSlot.slotDate,
+        })
+        .setLock("pessimistic_write")
+        .getMany();
+
+      const updatableSlots = slotsToRetire.filter(
+        (slot) => slot.status !== "booked" && slot.status !== "blocked",
+      );
+
+      if (updatableSlots.length === 0) {
+        return;
+      }
+
+      for (const slot of updatableSlots) {
+        slot.status = "blocked";
+      }
+
+      await slotRepository.save(updatableSlots);
+
+      this.logger.log(
+        `Retired ${updatableSlots.length} slots for fieldId=${fieldId} on ${oldestSlot.slotDate}`,
+      );
+    });
+
+    return oldestSlot.slotDate;
+  }
+
+  async appendNextSlotDate(fieldId: string): Promise<string | undefined> {
+    const latestSlot = await this.fieldSlotsRepository
+      .createQueryBuilder("slot")
+      .select("MAX(slot.slot_date)", "slotDate")
+      .where("slot.field_id = :fieldId", { fieldId })
+      .getRawOne<{ slotDate: string }>();
+
+    if (!latestSlot?.slotDate) {
+      return undefined;
+    }
+
+    const nextSlotDate = this.addDaysToDateString(latestSlot.slotDate, 1);
+    await this.syncFieldDate(fieldId, nextSlotDate);
+
+    return nextSlotDate;
+  }
+
+  async retireFieldDate(fieldId: string, slotDate: string): Promise<void> {
+    const maxAttempts = 2;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.fieldSlotsRepository.manager.transaction(async (manager) => {
+          const fieldRepository = manager.getRepository(Field);
+          const slotRepository = manager.getRepository(FieldSlot);
+
+          const field = await fieldRepository.findOne({
+            where: { id: fieldId },
+            relations: { scheduleSettings: true },
+          });
+
+          if (!field?.scheduleSettings) {
+            return;
+          }
+
+          const existingSlots = await slotRepository
+            .createQueryBuilder("slot")
+            .where("slot.field_id = :fieldId", { fieldId })
+            .andWhere("slot.slot_date = :slotDate", { slotDate })
+            .setLock("pessimistic_write")
+            .getMany();
+
+          const slotsToRetire = existingSlots.filter(
+            (slot) => slot.status !== "booked" && slot.status !== "blocked",
+          );
+
+          if (slotsToRetire.length === 0) {
+            return;
+          }
+
+          for (const slot of slotsToRetire) {
+            slot.status = "blocked";
+          }
+
+          await slotRepository.save(slotsToRetire);
+
+          this.logger.log(
+            `Retired ${slotsToRetire.length} slots for fieldId=${fieldId} on ${slotDate}`,
+          );
+        });
+
+        return;
+      } catch (error) {
+        const isLastAttempt = attempt === maxAttempts;
+
+        if (!this.isUniqueConstraintViolation(error) || isLastAttempt) {
+          throw error;
+        }
+
+        this.logger.warn(
+          `Concurrent slot retire conflict for fieldId=${fieldId} on ${slotDate}; retrying (attempt ${attempt + 1}/${maxAttempts})`,
+        );
+      }
+    }
+  }
+
   private getWeekdayFromDateString(slotDate: string): string {
     const date = new Date(`${slotDate}T00:00:00`);
 
@@ -188,6 +313,17 @@ export class FieldSlotSyncService {
       "friday",
       "saturday",
     ][date.getDay()];
+  }
+
+  private addDaysToDateString(slotDate: string, daysOffset: number): string {
+    const date = new Date(`${slotDate}T00:00:00`);
+    date.setDate(date.getDate() + daysOffset);
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
   }
 
   private isUniqueConstraintViolation(error: unknown): boolean {

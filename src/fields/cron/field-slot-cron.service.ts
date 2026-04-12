@@ -18,16 +18,13 @@ export class FieldSlotCronService {
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async generateTomorrowSlotsFromRuleBooks(): Promise<void> {
-    const targetDate = FieldSlotGenerator.getDateStringFromOffset(1);
-    const targetWeekday = FieldSlotGenerator.getWeekdayFromOffset(1);
-
     const fields = await this.fieldsRepository.find({
       where: { isActive: true },
       relations: { scheduleSettings: true, ruleBooks: true },
     });
 
     this.logger.log(
-      `Midnight slot cron started for date=${targetDate} weekday=${targetWeekday}. Active fields=${fields.length}`,
+      `Midnight slot cron started. Active fields=${fields.length}`,
     );
 
     let processedCount = 0;
@@ -39,19 +36,27 @@ export class FieldSlotCronService {
       }
 
       try {
-        await this.fieldSlotSyncService.syncFieldDate(field.id, targetDate);
+        const retiredDate =
+          await this.fieldSlotSyncService.retireOldestActiveSlotDate(field.id);
+        const appendedDate = await this.fieldSlotSyncService.appendNextSlotDate(
+          field.id,
+        );
         processedCount += 1;
+
+        this.logger.log(
+          `Rolled slot window for fieldId=${field.id}. Retired=${retiredDate ?? "none"}, Appended=${appendedDate ?? "none"}`,
+        );
       } catch (error) {
         failedCount += 1;
         this.logger.error(
-          `Failed to generate slots for fieldId=${field.id} on ${targetDate}`,
+          `Failed to roll slots for fieldId=${field.id}`,
           error instanceof Error ? error.stack : String(error),
         );
       }
     }
 
     this.logger.log(
-      `Midnight slot cron finished for date=${targetDate}. Processed=${processedCount}, Failed=${failedCount}`,
+      `Midnight slot cron finished. Processed=${processedCount}, Failed=${failedCount}`,
     );
   }
 }

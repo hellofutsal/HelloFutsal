@@ -316,6 +316,16 @@ export class FieldsService {
       this.initialSlotWindowDays,
     );
 
+    const initialDayDate = FieldSlotGenerator.getDateStringFromOffset(0);
+    await this.fieldSlotsRepository
+      .createQueryBuilder()
+      .update(FieldSlot)
+      .set({ status: "blocked" })
+      .where("field_id = :fieldId", { fieldId })
+      .andWhere("slot_date = :slotDate", { slotDate: initialDayDate })
+      .andWhere("status != :bookedStatus", { bookedStatus: "booked" })
+      .execute();
+
     const rangeStart = FieldSlotGenerator.getDateStringFromOffset(0);
     const rangeEnd = FieldSlotGenerator.getDateStringFromOffset(
       this.initialSlotWindowDays - 1,
