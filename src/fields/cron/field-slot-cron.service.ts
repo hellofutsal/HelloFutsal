@@ -9,6 +9,7 @@ import { FieldSlotSyncService } from "./field-slot-sync.service";
 @Injectable()
 export class FieldSlotCronService {
   private readonly logger = new Logger(FieldSlotCronService.name);
+  private readonly slotWindowDays = this.resolveSlotWindowDays();
 
   constructor(
     @InjectRepository(Field)
@@ -18,8 +19,14 @@ export class FieldSlotCronService {
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async generateTomorrowSlotsFromRuleBooks(): Promise<void> {
-    const targetDate = FieldSlotGenerator.getDateStringFromOffset(1);
-    const targetWeekday = FieldSlotGenerator.getWeekdayFromOffset(1);
+    const retireOffsetDays = -1;
+    const targetOffsetDays = this.slotWindowDays - 1;
+    const retireDate =
+      FieldSlotGenerator.getDateStringFromOffset(retireOffsetDays);
+    const targetDate =
+      FieldSlotGenerator.getDateStringFromOffset(targetOffsetDays);
+    const targetWeekday =
+      FieldSlotGenerator.getWeekdayFromOffset(targetOffsetDays);
 
     const fields = await this.fieldsRepository.find({
       where: { isActive: true },
@@ -27,7 +34,7 @@ export class FieldSlotCronService {
     });
 
     this.logger.log(
-      `Midnight slot cron started for date=${targetDate} weekday=${targetWeekday}. Active fields=${fields.length}`,
+      `Midnight slot cron started for retire date=${retireDate} and extension date=${targetDate} weekday=${targetWeekday}. Active fields=${fields.length}`,
     );
 
     let processedCount = 0;
@@ -39,6 +46,7 @@ export class FieldSlotCronService {
       }
 
       try {
+        await this.fieldSlotSyncService.retireFieldDate(field.id, retireDate);
         await this.fieldSlotSyncService.syncFieldDate(field.id, targetDate);
         processedCount += 1;
       } catch (error) {
@@ -53,5 +61,23 @@ export class FieldSlotCronService {
     this.logger.log(
       `Midnight slot cron finished for date=${targetDate}. Processed=${processedCount}, Failed=${failedCount}`,
     );
+  }
+
+  private resolveSlotWindowDays(): number {
+    const rawValue = process.env.INITIAL_SLOT_WINDOW_DAYS;
+
+    if (!rawValue) {
+      return 30;
+    }
+
+    const parsedValue = Number(rawValue);
+    if (!Number.isInteger(parsedValue) || parsedValue < 1) {
+      this.logger.warn(
+        `Invalid INITIAL_SLOT_WINDOW_DAYS value "${rawValue}". Falling back to 30.`,
+      );
+      return 30;
+    }
+
+    return parsedValue;
   }
 }

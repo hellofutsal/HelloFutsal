@@ -176,6 +176,65 @@ export class FieldSlotSyncService {
     }
   }
 
+  async retireFieldDate(fieldId: string, slotDate: string): Promise<void> {
+    const maxAttempts = 2;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.fieldSlotsRepository.manager.transaction(async (manager) => {
+          const fieldRepository = manager.getRepository(Field);
+          const slotRepository = manager.getRepository(FieldSlot);
+
+          const field = await fieldRepository.findOne({
+            where: { id: fieldId },
+            relations: { scheduleSettings: true },
+          });
+
+          if (!field?.scheduleSettings) {
+            return;
+          }
+
+          const existingSlots = await slotRepository
+            .createQueryBuilder("slot")
+            .where("slot.field_id = :fieldId", { fieldId })
+            .andWhere("slot.slot_date = :slotDate", { slotDate })
+            .setLock("pessimistic_write")
+            .getMany();
+
+          const slotsToRetire = existingSlots.filter(
+            (slot) => slot.status !== "booked" && slot.status !== "blocked",
+          );
+
+          if (slotsToRetire.length === 0) {
+            return;
+          }
+
+          for (const slot of slotsToRetire) {
+            slot.status = "blocked";
+          }
+
+          await slotRepository.save(slotsToRetire);
+
+          this.logger.log(
+            `Retired ${slotsToRetire.length} slots for fieldId=${fieldId} on ${slotDate}`,
+          );
+        });
+
+        return;
+      } catch (error) {
+        const isLastAttempt = attempt === maxAttempts;
+
+        if (!this.isUniqueConstraintViolation(error) || isLastAttempt) {
+          throw error;
+        }
+
+        this.logger.warn(
+          `Concurrent slot retire conflict for fieldId=${fieldId} on ${slotDate}; retrying (attempt ${attempt + 1}/${maxAttempts})`,
+        );
+      }
+    }
+  }
+
   private getWeekdayFromDateString(slotDate: string): string {
     const date = new Date(`${slotDate}T00:00:00`);
 
