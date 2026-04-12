@@ -7,8 +7,8 @@ import https from "node:https";
 export class KeepAliveService {
   private readonly logger = new Logger(KeepAliveService.name);
 
-  @Cron("*/8 * * * *")
-  async pingActiveEndpointEveryEightMinutes(): Promise<void> {
+  @Cron("*/20 * * * *")
+  async pingActiveEndpointEveryTwentyMinutes(): Promise<void> {
     const enabled = process.env.KEEP_ALIVE_SELF_PING_ENABLED === "true";
     if (!enabled) {
       return;
@@ -20,7 +20,9 @@ export class KeepAliveService {
 
     try {
       await this.ping(targetUrl);
-      this.logger.log(`Keep-alive ping succeeded: ${redactedTargetUrl}`);
+      this.logger.log(
+        `Server alive. Keep-alive ping succeeded: ${redactedTargetUrl}`,
+      );
     } catch (error) {
       this.logger.warn(
         `Keep-alive ping failed for ${redactedTargetUrl}: ${error instanceof Error ? error.message : String(error)}`,
