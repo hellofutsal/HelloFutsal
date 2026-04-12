@@ -317,16 +317,6 @@ export class FieldsService {
       this.initialSlotWindowDays,
     );
 
-    const initialDayDate = FieldSlotGenerator.getDateStringFromOffset(0);
-    await this.fieldSlotsRepository
-      .createQueryBuilder()
-      .update(FieldSlot)
-      .set({ status: "blocked" })
-      .where("field_id = :fieldId", { fieldId })
-      .andWhere("slot_date = :slotDate", { slotDate: initialDayDate })
-      .andWhere("status != :bookedStatus", { bookedStatus: "booked" })
-      .execute();
-
     const rangeStart = FieldSlotGenerator.getDateStringFromOffset(0);
     const rangeEnd = FieldSlotGenerator.getDateStringFromOffset(
       this.initialSlotWindowDays - 1,
@@ -447,9 +437,26 @@ export class FieldsService {
       isActive: true,
     });
 
-    try {
-      const savedRuleBook = await this.fieldRuleBooksRepository.save(ruleBook);
+    let savedRuleBook: FieldRuleBook;
 
+    try {
+      savedRuleBook = await this.fieldRuleBooksRepository.save(ruleBook);
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist rule book for fieldId=${fieldId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+
+      if (this.isRuleBookNameUniqueViolation(error)) {
+        throw new ConflictException(
+          "Rule book name already exists for this field",
+        );
+      }
+
+      throw error;
+    }
+
+    try {
       await this.fieldSlotSyncService.syncFieldWindow(
         fieldId,
         0,
@@ -466,9 +473,9 @@ export class FieldsService {
         error instanceof Error ? error.stack : String(error),
       );
 
-      if (this.isUniqueConstraintViolation(error)) {
+      if (this.isFieldSlotUniqueViolation(error)) {
         throw new ConflictException(
-          "Rule book name already exists for this field",
+          "Slots are being synchronized. Please retry the rule book request.",
         );
       }
 
@@ -883,5 +890,37 @@ export class FieldsService {
     };
 
     return driverError.driverError?.code === "23505";
+  }
+
+  private isRuleBookNameUniqueViolation(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+
+    const driverError = error as QueryFailedError & {
+      driverError?: { code?: string; constraint?: string };
+    };
+
+    return (
+      driverError.driverError?.code === "23505" &&
+      driverError.driverError?.constraint ===
+        "UQ_field_rule_books_field_rule_name"
+    );
+  }
+
+  private isFieldSlotUniqueViolation(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+
+    const driverError = error as QueryFailedError & {
+      driverError?: { code?: string; constraint?: string };
+    };
+
+    return (
+      driverError.driverError?.code === "23505" &&
+      driverError.driverError?.constraint ===
+        "UQ_field_slots_field_date_start_time"
+    );
   }
 }

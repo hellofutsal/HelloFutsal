@@ -5,7 +5,7 @@ meta {
 }
 
 post {
-  url: {{development}}/fields/1ac75ecc-256e-4a6e-93c4-0f480961b7ce/rule-books
+  url: {{development}}/fields/{{fieldId}}/rule-books
   body: json
   auth: bearer
 }
@@ -16,7 +16,7 @@ headers {
 }
 
 auth:bearer {
-  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhNWVlNWQ0Zi0wODk3LTRhYTQtYmJhYy1mNWVkNDFiZDQ3NGYiLCJlbWFpbCI6bnVsbCwibW9iaWxlTnVtYmVyIjoiOTgxMjM0NTY3OCIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NTkxNDkwOSwiZXhwIjoxNzc2MDAxMzA5fQ.deiZt-9lJ-x_tuEu-2NCmq5jy1CngOkbjefq8AhpuKw
+  token: {{token}}
 }
 
 body:json {
@@ -29,11 +29,7 @@ body:json {
       "startTime": "06:00",
       "endTime": "11:00",
       "activeDays": [
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday"
+    "sunday"
       ]
     }
   }
