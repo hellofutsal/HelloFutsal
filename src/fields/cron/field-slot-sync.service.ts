@@ -42,6 +42,11 @@ export class FieldSlotSyncService {
           const fieldRepository = manager.getRepository(Field);
           const slotRepository = manager.getRepository(FieldSlot);
 
+          // Serialize sync for the same field/date to avoid concurrent duplicate inserts.
+          await manager.query("SELECT pg_advisory_xact_lock(hashtext($1));", [
+            `field-slot-sync:${fieldId}:${slotDate}`,
+          ]);
+
           const field = await fieldRepository.findOne({
             where: { id: fieldId },
             relations: { scheduleSettings: true, ruleBooks: true },
@@ -72,10 +77,15 @@ export class FieldSlotSyncService {
             .getMany();
 
           const existingSlotsByStartTime = new Map(
-            existingSlots.map((slot) => [slot.startTime, slot]),
+            existingSlots.map((slot) => [
+              this.normalizeTimeForKey(slot.startTime),
+              slot,
+            ]),
           );
           const generatedStartTimes = new Set(
-            generatedSlots.map((slot) => slot.startTime),
+            generatedSlots.map((slot) =>
+              this.normalizeTimeForKey(slot.startTime),
+            ),
           );
 
           const activeRuleBooks = (field.ruleBooks ?? []).filter(
@@ -111,7 +121,9 @@ export class FieldSlotSyncService {
               scheduleSettings.basePrice,
             );
 
-            const existingSlot = existingSlotsByStartTime.get(slot.startTime);
+            const existingSlot = existingSlotsByStartTime.get(
+              this.normalizeTimeForKey(slot.startTime),
+            );
             if (existingSlot) {
               if (existingSlot.status !== "booked") {
                 existingSlot.price = resolvedPrice;
@@ -138,7 +150,11 @@ export class FieldSlotSyncService {
 
           // Retire stale non-booked slots that no longer match generated schedule.
           for (const existingSlot of existingSlots) {
-            if (generatedStartTimes.has(existingSlot.startTime)) {
+            if (
+              generatedStartTimes.has(
+                this.normalizeTimeForKey(existingSlot.startTime),
+              )
+            ) {
               continue;
             }
 
@@ -179,10 +195,13 @@ export class FieldSlotSyncService {
   async retireOldestActiveSlotDate(
     fieldId: string,
   ): Promise<string | undefined> {
+    const today = FieldSlotGenerator.getCurrentDateString();
+
     const oldestSlot = await this.fieldSlotsRepository
       .createQueryBuilder("slot")
       .select("slot.slot_date", "slotDate")
       .where("slot.field_id = :fieldId", { fieldId })
+      .andWhere("slot.slot_date < :today", { today })
       .andWhere("slot.status != :blockedStatus", { blockedStatus: "blocked" })
       .orderBy("slot.slot_date", "ASC")
       .getRawOne<{ slotDate: string }>();
@@ -324,6 +343,11 @@ export class FieldSlotSyncService {
     const day = String(date.getDate()).padStart(2, "0");
 
     return `${year}-${month}-${day}`;
+  }
+
+  private normalizeTimeForKey(time: string): string {
+    const trimmed = time.trim();
+    return trimmed.length >= 5 ? trimmed.slice(0, 5) : trimmed;
   }
 
   private isUniqueConstraintViolation(error: unknown): boolean {

@@ -16,29 +16,16 @@ headers {
 }
 
 auth:bearer {
-  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ZjZhMmEwOS0wOGI0LTRiZTItYjgxMy01YjdiMTlkZTkwNDEiLCJlbWFpbCI6bnVsbCwibW9iaWxlTnVtYmVyIjoiOTgxMjM0NTY3OCIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NTg4MzMyMCwiZXhwIjoxNzc1OTY5NzIwfQ.OGoYgJDMA_bHveVKPTJIPzvui_Gfwh31CAkdTQo2nbs
+  token: {{token}}
 }
 
 body:json {
   [
     {
-      "venueName": "Hello Arena 3",
+      "venueName": "Ayush Field 2",
       "fieldName": "Field A - 7-a-side",
-      "playerCapacity": 14,
+      "playerCapacity": 5,
       "address": "123 Sports Lane"
-    },
-    {
-      "venueName": "Hello Arena 3",
-      "fieldName": "Field B - 5-a-side",
-      "playerCapacity": 10,
-      "address": "123 Sports Lane"
-  
-    },
-    {
-      "venueName": "Hello Arena 4",
-      "fieldName": "Main Ground",
-      "playerCapacity": 22,
-      "address": "456 Football St"
     }
   ]
 }

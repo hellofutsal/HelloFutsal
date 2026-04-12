@@ -1,0 +1,41 @@
+meta {
+  name: CreateFieldRuleBookSpecificSlots
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{development}}/fields/{{fieldId}}/rule-books
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+  ~Authorization: Bearer {{token}}
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "ruleName": "Morning Promo Specific Slots",
+    "slotSelectionType": "specificSlots",
+    "actionType": "fixedPrice",
+    "value": 700,
+    "specificSlots": [
+      {
+        "activeDays": ["sunday", "monday", "wednesday"],
+        "startTime": "06:00",
+        "endTime": "07:00"
+      },
+      {
+        "activeDays": ["sunday", "monday", "wednesday"],
+        "startTime": "07:00",
+        "endTime": "08:00"
+      }
+    ]
+  }
+}
