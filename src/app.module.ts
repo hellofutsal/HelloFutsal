@@ -13,6 +13,7 @@ import { FieldScheduleSettings } from "./fields/entities/field-schedule-settings
 import { FieldSlot } from "./fields/entities/field-slot.entity";
 import { FieldsModule } from "./fields/fields.module";
 import { KeepAliveModule } from "./keep-alive/keep-alive.module";
+import { AppController } from "./app.controller";
 
 function resolveSslConfig(configService: ConfigService, sslMode: string) {
   if (sslMode === "disable" || sslMode === "allow" || sslMode === "prefer") {
@@ -138,5 +139,6 @@ function getDatabaseConfig(configService: ConfigService) {
     FieldsModule,
     KeepAliveModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}

@@ -7,8 +7,8 @@ import https from "node:https";
 export class KeepAliveService {
   private readonly logger = new Logger(KeepAliveService.name);
 
-  @Cron("*/20 * * * *")
-  async pingActiveEndpointEveryTwentyMinutes(): Promise<void> {
+  @Cron("*/10 * * * *")
+  async pingActiveEndpointEveryTenMinutes(): Promise<void> {
     const enabled = process.env.KEEP_ALIVE_SELF_PING_ENABLED === "true";
     if (!enabled) {
       return;
