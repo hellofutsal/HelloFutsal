@@ -1,4 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
+import { RuleBookActionType } from "../dto/create-field-rule-book.dto";
 import { FieldRuleBook } from "../entities/field-rule-book.entity";
 
 export class FieldSlotGenerator {
@@ -76,7 +77,7 @@ export class FieldSlotGenerator {
     });
 
     if (matchedSpecificRule) {
-      return matchedSpecificRule.value;
+      return this.resolvePriceByActionType(matchedSpecificRule, defaultPrice);
     }
 
     const matchedTimeRangeRule = timeRangeRules.find((ruleBook) => {
@@ -94,15 +95,37 @@ export class FieldSlotGenerator {
     });
 
     if (matchedTimeRangeRule) {
-      return matchedTimeRangeRule.value;
+      return this.resolvePriceByActionType(matchedTimeRangeRule, defaultPrice);
     }
 
     const matchedAllSlotRule = allSlotRules[0];
     if (matchedAllSlotRule) {
-      return matchedAllSlotRule.value;
+      return this.resolvePriceByActionType(matchedAllSlotRule, defaultPrice);
     }
 
     return defaultPrice;
+  }
+
+  static resolvePriceByActionType(
+    ruleBook: FieldRuleBook,
+    basePrice: string,
+  ): string {
+    const actionType = ruleBook.actionType;
+    const ruleValue = Number(ruleBook.value);
+    const price = Number(basePrice);
+
+    if (Number.isNaN(ruleValue) || Number.isNaN(price)) {
+      throw new BadRequestException(
+        `Invalid pricing data for rule book ${ruleBook.ruleName}`,
+      );
+    }
+
+    if (actionType === RuleBookActionType.PERCENTAGE_DISCOUNT) {
+      const discountedPrice = price - price * (ruleValue / 100);
+      return Math.max(discountedPrice, 0).toFixed(2);
+    }
+
+    return ruleValue.toFixed(2);
   }
 
   static getRuleBookTimeRange(ruleBook: FieldRuleBook): {

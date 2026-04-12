@@ -12,6 +12,7 @@ import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { CreateFieldDto } from "./dto/create-field.dto";
 import {
   CreateFieldRuleBookDto,
+  RuleBookActionType,
   RuleBookSlotSelectionType,
 } from "./dto/create-field-rule-book.dto";
 import { CreateFieldScheduleSettingsDto } from "./dto/create-field-schedule-settings.dto";
@@ -642,6 +643,16 @@ export class FieldsService {
     const value = Number(createFieldRuleBookDto.value);
     if (Number.isNaN(value) || value < 0) {
       throw new BadRequestException("value must be a valid positive number");
+    }
+
+    if (
+      createFieldRuleBookDto.actionType ===
+        RuleBookActionType.PERCENTAGE_DISCOUNT &&
+      value > 100
+    ) {
+      throw new BadRequestException(
+        "value must be less than or equal to 100 for percentage discounts",
+      );
     }
 
     const ruleConfig: Record<string, unknown> = {

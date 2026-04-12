@@ -22,6 +22,7 @@ export enum RuleBookSlotSelectionType {
 
 export enum RuleBookActionType {
   FIXED_PRICE = "fixedPrice",
+  PERCENTAGE_DISCOUNT = "percentageDiscount",
 }
 
 const WEEKDAY_VALUES = [
