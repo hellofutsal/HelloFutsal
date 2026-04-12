@@ -715,7 +715,7 @@ export class FieldsService {
         }
 
         return {
-          slotDate: slot.slotDate,
+          activeDays: slot.activeDays,
           startTime: this.formatMinutesToTime(startTimeMinutes),
           endTime: this.formatMinutesToTime(endTimeMinutes),
         };

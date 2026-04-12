@@ -70,7 +70,7 @@ export class FieldSlotGenerator {
       const specificSlots = this.getRuleBookSpecificSlots(ruleBook);
       return specificSlots.some(
         (specificSlot) =>
-          specificSlot.slotDate === slotDate &&
+          specificSlot.activeDays.includes(weekday) &&
           specificSlot.startTime === slot.startTime &&
           specificSlot.endTime === slot.endTime,
       );
@@ -151,13 +151,13 @@ export class FieldSlotGenerator {
   }
 
   static getRuleBookSpecificSlots(ruleBook: FieldRuleBook): Array<{
-    slotDate: string;
+    activeDays: string[];
     startTime: string;
     endTime: string;
   }> {
     const specificSlots = ruleBook.ruleConfig.specificSlots as
       | Array<{
-          slotDate?: string;
+          activeDays?: string[];
           startTime?: string;
           endTime?: string;
         }>
@@ -170,8 +170,13 @@ export class FieldSlotGenerator {
     return specificSlots.filter(
       (
         slot,
-      ): slot is { slotDate: string; startTime: string; endTime: string } =>
-        Boolean(slot.slotDate && slot.startTime && slot.endTime),
+      ): slot is { activeDays: string[]; startTime: string; endTime: string } =>
+        Boolean(
+          slot.activeDays &&
+          slot.activeDays.length > 0 &&
+          slot.startTime &&
+          slot.endTime,
+        ),
     );
   }
 

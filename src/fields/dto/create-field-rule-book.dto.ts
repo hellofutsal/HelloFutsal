@@ -52,9 +52,11 @@ export class RuleBookTimeRangeDto {
 }
 
 export class RuleBookSpecificSlotDto {
-  @IsString()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/)
-  slotDate!: string;
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  @IsIn(WEEKDAY_VALUES, { each: true })
+  activeDays!: string[];
 
   @IsString()
   @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
