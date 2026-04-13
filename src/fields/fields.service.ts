@@ -516,6 +516,7 @@ export class FieldsService {
 
     const normalizedRuleBook = this.normalizeCreateFieldRuleBookInput(
       createFieldRuleBookDto,
+      existingRuleBook.isActive,
     );
 
     existingRuleBook.ruleName = normalizedRuleBook.ruleName;
@@ -562,13 +563,12 @@ export class FieldsService {
         error instanceof Error ? error.stack : String(error),
       );
 
-      if (this.isFieldSlotUniqueViolation(error)) {
-        throw new ConflictException(
-          "Slots are being synchronized. Please retry the rule book update request.",
-        );
-      }
-
-      throw error;
+      return {
+        ruleBook: savedRuleBook,
+        slotsUpdated: false,
+        message:
+          "Rule book updated successfully, but slot synchronization failed. Please retry slot sync.",
+      };
     }
   }
 
@@ -722,6 +722,7 @@ export class FieldsService {
 
   private normalizeCreateFieldRuleBookInput(
     createFieldRuleBookDto: CreateFieldRuleBookDto,
+    defaultIsActive = true,
   ): {
     ruleName: string;
     slotSelectionType: RuleBookSlotSelectionType;
@@ -852,7 +853,7 @@ export class FieldsService {
       actionType: createFieldRuleBookDto.actionType,
       value: value.toFixed(2),
       ruleConfig,
-      isActive: createFieldRuleBookDto.isActive ?? true,
+      isActive: createFieldRuleBookDto.isActive ?? defaultIsActive,
     };
   }
 

@@ -155,7 +155,7 @@ export class CreateFieldRuleBookDto {
         return enabled;
       }
 
-      return true;
+      return undefined;
     }
 
     if (typeof value === "boolean") {
@@ -163,9 +163,9 @@ export class CreateFieldRuleBookDto {
     }
 
     const enabled = (obj as { enabled?: unknown })?.enabled;
-    return typeof enabled === "boolean" ? enabled : true;
+    return typeof enabled === "boolean" ? enabled : undefined;
   })
-  isActive: boolean = true;
+  isActive?: boolean;
 
   @IsOptional()
   @IsInt()
