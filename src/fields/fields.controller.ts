@@ -120,6 +120,23 @@ export class FieldsController {
     return this.fieldsService.createFieldRuleBook(account, fieldId, dto);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Patch(":fieldId/rule-books/:ruleBookId")
+  updateRuleBook(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Param("ruleBookId", new ParseUUIDPipe()) ruleBookId: string,
+    @Body() payload: CreateFieldRuleBookDto,
+  ) {
+    const dto = this.validateRuleBookDto(payload, "ruleBook");
+    return this.fieldsService.updateFieldRuleBook(
+      account,
+      fieldId,
+      ruleBookId,
+      dto,
+    );
+  }
+
   private validateDto(value: unknown, label: string): CreateFieldDto {
     const dto = plainToInstance(CreateFieldDto, value);
     const errors = validateSync(dto, {

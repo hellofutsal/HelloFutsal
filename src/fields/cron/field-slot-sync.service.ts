@@ -92,21 +92,27 @@ export class FieldSlotSyncService {
             (ruleBook) => ruleBook.isActive,
           );
 
-          const specificRules = activeRuleBooks.filter(
-            (ruleBook) =>
-              ruleBook.slotSelectionType ===
-              RuleBookSlotSelectionType.SPECIFIC_SLOTS,
-          );
-          const timeRangeRules = activeRuleBooks.filter(
-            (ruleBook) =>
-              ruleBook.slotSelectionType ===
-              RuleBookSlotSelectionType.TIME_RANGE,
-          );
-          const allSlotRules = activeRuleBooks.filter(
-            (ruleBook) =>
-              ruleBook.slotSelectionType ===
-              RuleBookSlotSelectionType.ALL_SLOTS,
-          );
+          const specificRules = activeRuleBooks
+            .filter(
+              (ruleBook) =>
+                ruleBook.slotSelectionType ===
+                RuleBookSlotSelectionType.SPECIFIC_SLOTS,
+            )
+            .sort((a, b) => this.compareRuleBooks(a, b, 1));
+          const timeRangeRules = activeRuleBooks
+            .filter(
+              (ruleBook) =>
+                ruleBook.slotSelectionType ===
+                RuleBookSlotSelectionType.TIME_RANGE,
+            )
+            .sort((a, b) => this.compareRuleBooks(a, b, 2));
+          const allSlotRules = activeRuleBooks
+            .filter(
+              (ruleBook) =>
+                ruleBook.slotSelectionType ===
+                RuleBookSlotSelectionType.ALL_SLOTS,
+            )
+            .sort((a, b) => this.compareRuleBooks(a, b, 3));
 
           const slotEntities: FieldSlot[] = [];
 
@@ -385,6 +391,14 @@ export class FieldSlotSyncService {
   private normalizeTimeForKey(time: string): string {
     const trimmed = time.trim();
     return trimmed.length >= 5 ? trimmed.slice(0, 5) : trimmed;
+  }
+
+  private compareRuleBooks(
+    firstRule: FieldRuleBook,
+    secondRule: FieldRuleBook,
+    _defaultPriority: number,
+  ): number {
+    return firstRule.createdAt.getTime() - secondRule.createdAt.getTime();
   }
 
   private isUniqueConstraintViolation(error: unknown): boolean {

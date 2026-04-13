@@ -434,7 +434,7 @@ export class FieldsService {
       actionType: normalizedRuleBook.actionType,
       value: normalizedRuleBook.value,
       ruleConfig: normalizedRuleBook.ruleConfig,
-      isActive: true,
+      isActive: normalizedRuleBook.isActive,
     });
 
     let savedRuleBook: FieldRuleBook;
@@ -476,6 +476,95 @@ export class FieldsService {
       if (this.isFieldSlotUniqueViolation(error)) {
         throw new ConflictException(
           "Slots are being synchronized. Please retry the rule book request.",
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  async updateFieldRuleBook(
+    account: AuthenticatedAccount,
+    fieldId: string,
+    ruleBookId: string,
+    createFieldRuleBookDto: CreateFieldRuleBookDto,
+  ) {
+    this.ensureAdmin(account);
+
+    const field = await this.fieldsRepository.findOne({
+      where: { id: fieldId, ownerId: account.id },
+      relations: { scheduleSettings: true },
+    });
+
+    if (!field) {
+      throw new NotFoundException("Field not found");
+    }
+
+    if (!field.scheduleSettings) {
+      throw new BadRequestException(
+        "Schedule settings must be created before updating rule books",
+      );
+    }
+
+    const existingRuleBook = await this.fieldRuleBooksRepository.findOne({
+      where: { id: ruleBookId, fieldId },
+    });
+
+    if (!existingRuleBook) {
+      throw new NotFoundException("Rule book not found");
+    }
+
+    const normalizedRuleBook = this.normalizeCreateFieldRuleBookInput(
+      createFieldRuleBookDto,
+    );
+
+    existingRuleBook.ruleName = normalizedRuleBook.ruleName;
+    existingRuleBook.slotSelectionType = normalizedRuleBook.slotSelectionType;
+    existingRuleBook.actionType = normalizedRuleBook.actionType;
+    existingRuleBook.value = normalizedRuleBook.value;
+    existingRuleBook.ruleConfig = normalizedRuleBook.ruleConfig;
+    existingRuleBook.isActive = normalizedRuleBook.isActive;
+
+    let savedRuleBook: FieldRuleBook;
+
+    try {
+      savedRuleBook =
+        await this.fieldRuleBooksRepository.save(existingRuleBook);
+    } catch (error) {
+      this.logger.error(
+        `Failed to update rule book id=${ruleBookId} for fieldId=${fieldId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+
+      if (this.isRuleBookNameUniqueViolation(error)) {
+        throw new ConflictException(
+          "Rule book name already exists for this field",
+        );
+      }
+
+      throw error;
+    }
+
+    try {
+      await this.fieldSlotSyncService.syncFieldWindow(
+        fieldId,
+        0,
+        this.initialSlotWindowDays,
+      );
+
+      return {
+        ruleBook: savedRuleBook,
+        slotsUpdated: true,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to sync slots after updating rule book id=${ruleBookId} for fieldId=${fieldId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+
+      if (this.isFieldSlotUniqueViolation(error)) {
+        throw new ConflictException(
+          "Slots are being synchronized. Please retry the rule book update request.",
         );
       }
 
@@ -639,6 +728,7 @@ export class FieldsService {
     actionType: CreateFieldRuleBookDto["actionType"];
     value: string;
     ruleConfig: Record<string, unknown>;
+    isActive: boolean;
   } {
     const ruleName = createFieldRuleBookDto.ruleName.trim();
     if (ruleName.length < 2 || ruleName.length > 120) {
@@ -669,6 +759,22 @@ export class FieldsService {
 
     if (
       createFieldRuleBookDto.slotSelectionType ===
+      RuleBookSlotSelectionType.ALL_SLOTS
+    ) {
+      const activeDays = createFieldRuleBookDto.activeDays;
+      if (!activeDays || activeDays.length === 0) {
+        throw new BadRequestException(
+          "activeDays are required for allSlots rules",
+        );
+      }
+
+      ruleConfig.allSlots = {
+        activeDays,
+      };
+    }
+
+    if (
+      createFieldRuleBookDto.slotSelectionType ===
       RuleBookSlotSelectionType.TIME_RANGE
     ) {
       const timeRange = createFieldRuleBookDto.timeRange;
@@ -680,6 +786,15 @@ export class FieldsService {
 
       const startTimeMinutes = this.parseTimeToMinutes(timeRange.startTime);
       const endTimeMinutes = this.parseTimeToMinutes(timeRange.endTime);
+      const activeDays =
+        createFieldRuleBookDto.activeDays ?? timeRange.activeDays;
+
+      if (!activeDays || activeDays.length === 0) {
+        throw new BadRequestException(
+          "activeDays are required for timeRange rules",
+        );
+      }
+
       if (endTimeMinutes <= startTimeMinutes) {
         throw new BadRequestException(
           "timeRange.endTime must be after timeRange.startTime",
@@ -689,7 +804,7 @@ export class FieldsService {
       ruleConfig.timeRange = {
         startTime: this.formatMinutesToTime(startTimeMinutes),
         endTime: this.formatMinutesToTime(endTimeMinutes),
-        activeDays: timeRange.activeDays,
+        activeDays,
       };
     }
 
@@ -707,6 +822,9 @@ export class FieldsService {
       ruleConfig.specificSlots = specificSlots.map((slot, index) => {
         const startTimeMinutes = this.parseTimeToMinutes(slot.startTime);
         const endTimeMinutes = this.parseTimeToMinutes(slot.endTime);
+        const activeDays =
+          createFieldRuleBookDto.activeDays ??
+          (slot as { activeDays?: string[] }).activeDays;
 
         if (endTimeMinutes <= startTimeMinutes) {
           throw new BadRequestException(
@@ -714,8 +832,14 @@ export class FieldsService {
           );
         }
 
+        if (!activeDays || activeDays.length === 0) {
+          throw new BadRequestException(
+            `activeDays are required for specificSlots rules`,
+          );
+        }
+
         return {
-          activeDays: slot.activeDays,
+          activeDays,
           startTime: this.formatMinutesToTime(startTimeMinutes),
           endTime: this.formatMinutesToTime(endTimeMinutes),
         };
@@ -728,6 +852,7 @@ export class FieldsService {
       actionType: createFieldRuleBookDto.actionType,
       value: value.toFixed(2),
       ruleConfig,
+      isActive: createFieldRuleBookDto.isActive ?? true,
     };
   }
 

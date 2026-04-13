@@ -1,11 +1,11 @@
 meta {
-  name: CreateFieldRuleBookSpecificSlots
+  name: UpdateFieldRuleBookSpecificSlots
   type: http
-  seq: 6
+  seq: 10
 }
 
-post {
-  url: {{development}}/fields/{{fieldId}}/rule-books
+patch {
+  url: {{development}}/fields/{{fieldId}}/rule-books/{{ruleBookSpecificSlotId}}
   body: json
   auth: bearer
 }
@@ -21,7 +21,7 @@ auth:bearer {
 
 body:json {
   {
-    "ruleName": "Morning Promo Specific Slots",
+    "ruleName": "Morning Promo Specific SlotsUpdate ",
     "slotSelectionType": "specificSlots",
     "actionType": "fixedPrice",
     "value": 700,
