@@ -247,15 +247,16 @@ export class FieldSlotSyncService {
   async appendNextSlotDate(fieldId: string): Promise<string | undefined> {
     const latestSlot = await this.fieldSlotsRepository
       .createQueryBuilder("slot")
-      .select("MAX(slot.slot_date)", "slotDate")
+      .select("to_char(MAX(slot.slot_date), 'YYYY-MM-DD')", "slotDate")
       .where("slot.field_id = :fieldId", { fieldId })
-      .getRawOne<{ slotDate: string }>();
+      .getRawOne<{ slotDate: string | null }>();
 
     if (!latestSlot?.slotDate) {
       return undefined;
     }
 
-    const nextSlotDate = this.addDaysToDateString(latestSlot.slotDate, 1);
+    const latestSlotDate = this.normalizeDateStringInput(latestSlot.slotDate);
+    const nextSlotDate = this.addDaysToDateString(latestSlotDate, 1);
     await this.syncFieldDate(fieldId, nextSlotDate);
 
     return nextSlotDate;
@@ -336,12 +337,48 @@ export class FieldSlotSyncService {
 
   private addDaysToDateString(slotDate: string, daysOffset: number): string {
     const date = new Date(`${slotDate}T00:00:00`);
+
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`Invalid slot date: ${slotDate}`);
+    }
+
     date.setDate(date.getDate() + daysOffset);
 
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
 
+    return `${year}-${month}-${day}`;
+  }
+
+  private normalizeDateStringInput(value: string | Date): string {
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) {
+        throw new Error("Invalid slot date value returned from database");
+      }
+
+      const year = value.getUTCFullYear();
+      const month = String(value.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(value.getUTCDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    const trimmed = value.trim();
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
+
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error(
+        `Invalid slot date value returned from database: ${trimmed}`,
+      );
+    }
+
+    const year = parsed.getUTCFullYear();
+    const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getUTCDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   }
 
