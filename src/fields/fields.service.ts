@@ -253,6 +253,24 @@ export class FieldsService {
     }
   }
 
+  async listSlotsByField(fieldId: string) {
+    const field = await this.fieldsRepository.findOne({
+      where: { id: fieldId, isActive: true },
+    });
+
+    if (!field) {
+      throw new NotFoundException("Field not found");
+    }
+
+    return this.fieldSlotsRepository.find({
+      where: { fieldId },
+      order: {
+        slotDate: "ASC",
+        startTime: "ASC",
+      },
+    });
+  }
+
   async createScheduleSettings(
     account: AuthenticatedAccount,
     fieldId: string,
@@ -823,9 +841,7 @@ export class FieldsService {
       ruleConfig.specificSlots = specificSlots.map((slot, index) => {
         const startTimeMinutes = this.parseTimeToMinutes(slot.startTime);
         const endTimeMinutes = this.parseTimeToMinutes(slot.endTime);
-        const activeDays =
-          createFieldRuleBookDto.activeDays ??
-          (slot as { activeDays?: string[] }).activeDays;
+        const activeDays = createFieldRuleBookDto.activeDays;
 
         if (endTimeMinutes <= startTimeMinutes) {
           throw new BadRequestException(
@@ -840,7 +856,6 @@ export class FieldsService {
         }
 
         return {
-          activeDays,
           startTime: this.formatMinutesToTime(startTimeMinutes),
           endTime: this.formatMinutesToTime(endTimeMinutes),
         };

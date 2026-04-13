@@ -190,25 +190,12 @@ export class CreateFieldRuleBookDto {
 
     const timeRange = (obj as { timeRange?: { activeDays?: unknown } })
       ?.timeRange;
-    const specificSlots = (
-      obj as {
-        specificSlots?: Array<{ activeDays?: unknown }>;
-      }
-    )?.specificSlots;
 
     if (Array.isArray(timeRange?.activeDays)) {
       return timeRange.activeDays;
     }
 
-    if (Array.isArray(value)) {
-      return value;
-    }
-
-    const firstSpecificSlotWithDays = specificSlots?.find((slot) =>
-      Array.isArray(slot.activeDays),
-    );
-
-    return firstSpecificSlotWithDays?.activeDays;
+    return value;
   })
   activeDays?: string[];
 

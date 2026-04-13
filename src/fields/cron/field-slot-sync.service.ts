@@ -398,7 +398,19 @@ export class FieldSlotSyncService {
     secondRule: FieldRuleBook,
     _defaultPriority: number,
   ): number {
-    return firstRule.createdAt.getTime() - secondRule.createdAt.getTime();
+    const createdAtDiff =
+      firstRule.createdAt.getTime() - secondRule.createdAt.getTime();
+    if (createdAtDiff !== 0) {
+      return createdAtDiff;
+    }
+
+    const updatedAtDiff =
+      firstRule.updatedAt.getTime() - secondRule.updatedAt.getTime();
+    if (updatedAtDiff !== 0) {
+      return updatedAtDiff;
+    }
+
+    return firstRule.id.localeCompare(secondRule.id);
   }
 
   private isUniqueConstraintViolation(error: unknown): boolean {

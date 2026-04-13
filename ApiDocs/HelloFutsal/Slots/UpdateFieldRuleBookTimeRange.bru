@@ -5,7 +5,7 @@ meta {
 }
 
 patch {
-  url: {{development}}/fields/{{fieldId}}/rule-books/{{ruleBookTimeSlotId}}
+  url: {{development}}/fields/{{fieldId}}/rule-books/{{ruleBookId}}
   body: json
   auth: bearer
 }
@@ -25,7 +25,7 @@ body:json {
     "slotSelectionType": "timeRange",
     "actionType": "fixedPrice",
     "value": 1000,
-    "activeDays": ["sunday","wednesday"],
+    "activeDays": ["sunday", "wednesday"],
     "timeRange": {
       "startTime": "06:00",
       "endTime": "11:00"

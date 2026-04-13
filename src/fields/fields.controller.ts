@@ -87,6 +87,11 @@ export class FieldsController {
     return this.fieldsService.createSlots(account, fieldId, [slotDto]);
   }
 
+  @Get(":fieldId/slots")
+  getSlotsByField(@Param("fieldId", new ParseUUIDPipe()) fieldId: string) {
+    return this.fieldsService.listSlotsByField(fieldId);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post(":fieldId/schedule-settings")
   createScheduleSettings(
