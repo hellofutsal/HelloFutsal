@@ -443,6 +443,8 @@ export class FieldsService {
 
     const normalizedRuleBook = this.normalizeCreateFieldRuleBookInput(
       createFieldRuleBookDto,
+      true,
+      field.scheduleSettings.slotDurationMin,
     );
 
     const ruleBook = this.fieldRuleBooksRepository.create({
@@ -535,6 +537,7 @@ export class FieldsService {
     const normalizedRuleBook = this.normalizeCreateFieldRuleBookInput(
       createFieldRuleBookDto,
       existingRuleBook.isActive,
+      field.scheduleSettings.slotDurationMin,
     );
 
     existingRuleBook.ruleName = normalizedRuleBook.ruleName;
@@ -741,6 +744,7 @@ export class FieldsService {
   private normalizeCreateFieldRuleBookInput(
     createFieldRuleBookDto: CreateFieldRuleBookDto,
     defaultIsActive = true,
+    expectedSlotDurationMin?: number,
   ): {
     ruleName: string;
     slotSelectionType: RuleBookSlotSelectionType;
@@ -846,6 +850,16 @@ export class FieldsService {
         if (endTimeMinutes <= startTimeMinutes) {
           throw new BadRequestException(
             `specificSlots[${index}].endTime must be after specificSlots[${index}].startTime`,
+          );
+        }
+
+        const durationMinutes = endTimeMinutes - startTimeMinutes;
+        if (
+          expectedSlotDurationMin !== undefined &&
+          durationMinutes !== expectedSlotDurationMin
+        ) {
+          throw new BadRequestException(
+            `specificSlots[${index}] duration must be ${expectedSlotDurationMin} minutes to match field slot duration`,
           );
         }
 
