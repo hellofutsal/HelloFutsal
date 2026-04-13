@@ -260,24 +260,6 @@ export class CreateFieldRuleBookDto {
 
   @ValidateIf(
     (dto: CreateFieldRuleBookDto) =>
-      dto.slotSelectionType === RuleBookSlotSelectionType.ALL_SLOTS,
-  )
-  @IsArray()
-  @ArrayNotEmpty()
-  @IsString({ each: true })
-  @IsIn(WEEKDAY_VALUES, { each: true })
-  @Transform(({ value, obj }) => {
-    if (Array.isArray(value)) {
-      return value;
-    }
-
-    const aliasDays = (obj as { days?: unknown })?.days;
-    return Array.isArray(aliasDays) ? aliasDays : value;
-  })
-  days?: string[];
-
-  @ValidateIf(
-    (dto: CreateFieldRuleBookDto) =>
       dto.slotSelectionType === RuleBookSlotSelectionType.TIME_RANGE,
   )
   @IsDefined()

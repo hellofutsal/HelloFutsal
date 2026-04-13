@@ -856,6 +856,7 @@ export class FieldsService {
         }
 
         return {
+          activeDays,
           startTime: this.formatMinutesToTime(startTimeMinutes),
           endTime: this.formatMinutesToTime(endTimeMinutes),
         };
