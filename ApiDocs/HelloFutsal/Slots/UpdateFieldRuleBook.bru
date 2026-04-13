@@ -1,18 +1,18 @@
 meta {
-  name: CreateFieldRuleBook
+  name: UpdateFieldRuleBook
   type: http
-  seq: 5
+  seq: 8
 }
 
-post {
-  url: {{development}}/fields/{{fieldId}}/rule-books
+patch {
+  url: {{development}}/fields/{{fieldId}}/rule-books/{{ruleBookId}}
   body: json
   auth: bearer
 }
 
 headers {
   Content-Type: application/json
-  ~Authorization: Bearer $TOKEN
+  ~Authorization: Bearer {{token}}
 }
 
 auth:bearer {

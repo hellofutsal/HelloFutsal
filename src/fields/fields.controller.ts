@@ -87,6 +87,11 @@ export class FieldsController {
     return this.fieldsService.createSlots(account, fieldId, [slotDto]);
   }
 
+  @Get(":fieldId/slots")
+  getSlotsByField(@Param("fieldId", new ParseUUIDPipe()) fieldId: string) {
+    return this.fieldsService.listSlotsByField(fieldId);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post(":fieldId/schedule-settings")
   createScheduleSettings(
@@ -118,6 +123,23 @@ export class FieldsController {
   ) {
     const dto = this.validateRuleBookDto(payload, "ruleBook");
     return this.fieldsService.createFieldRuleBook(account, fieldId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(":fieldId/rule-books/:ruleBookId")
+  updateRuleBook(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Param("ruleBookId", new ParseUUIDPipe()) ruleBookId: string,
+    @Body() payload: CreateFieldRuleBookDto,
+  ) {
+    const dto = this.validateRuleBookDto(payload, "ruleBook");
+    return this.fieldsService.updateFieldRuleBook(
+      account,
+      fieldId,
+      ruleBookId,
+      dto,
+    );
   }
 
   private validateDto(value: unknown, label: string): CreateFieldDto {

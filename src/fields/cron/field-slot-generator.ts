@@ -98,7 +98,11 @@ export class FieldSlotGenerator {
       return this.resolvePriceByActionType(matchedTimeRangeRule, defaultPrice);
     }
 
-    const matchedAllSlotRule = allSlotRules[0];
+    const matchedAllSlotRule = allSlotRules.find((ruleBook) => {
+      const allSlotsConfig = this.getRuleBookAllSlotsConfig(ruleBook);
+      return allSlotsConfig.activeDays.includes(weekday);
+    });
+
     if (matchedAllSlotRule) {
       return this.resolvePriceByActionType(matchedAllSlotRule, defaultPrice);
     }
@@ -125,7 +129,29 @@ export class FieldSlotGenerator {
       return Math.max(discountedPrice, 0).toFixed(2);
     }
 
+    if (actionType === RuleBookActionType.MULTIPLY) {
+      return Math.max(price * ruleValue, 0).toFixed(2);
+    }
+
     return ruleValue.toFixed(2);
+  }
+
+  static getRuleBookAllSlotsConfig(ruleBook: FieldRuleBook): {
+    activeDays: string[];
+  } {
+    const allSlots = ruleBook.ruleConfig.allSlots as
+      | { activeDays?: string[] }
+      | undefined;
+
+    if (!allSlots?.activeDays || allSlots.activeDays.length === 0) {
+      throw new BadRequestException(
+        `Invalid allSlots configuration for rule book ${ruleBook.ruleName}`,
+      );
+    }
+
+    return {
+      activeDays: allSlots.activeDays,
+    };
   }
 
   static getRuleBookTimeRange(ruleBook: FieldRuleBook): {

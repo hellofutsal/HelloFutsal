@@ -1,18 +1,18 @@
 meta {
-  name: CreateFieldRuleBook
+  name: UpdateFieldRuleBookTimeRange
   type: http
-  seq: 5
+  seq: 9
 }
 
-post {
-  url: {{development}}/fields/{{fieldId}}/rule-books
+patch {
+  url: {{development}}/fields/{{fieldId}}/rule-books/{{ruleBookId}}
   body: json
   auth: bearer
 }
 
 headers {
   Content-Type: application/json
-  ~Authorization: Bearer $TOKEN
+  ~Authorization: Bearer {{token}}
 }
 
 auth:bearer {
@@ -25,9 +25,7 @@ body:json {
     "slotSelectionType": "timeRange",
     "actionType": "fixedPrice",
     "value": 1000,
-    "activeDays": [
-      "sunday"
-    ],
+    "activeDays": ["sunday", "wednesday"],
     "timeRange": {
       "startTime": "06:00",
       "endTime": "11:00"

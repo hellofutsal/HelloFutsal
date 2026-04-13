@@ -1,11 +1,11 @@
 meta {
-  name: CreateFieldRuleBookSpecificSlots
+  name: UpdateFieldRuleBookSpecificSlots
   type: http
-  seq: 6
+  seq: 10
 }
 
-post {
-  url: {{development}}/fields/{{fieldId}}/rule-books
+patch {
+  url: {{development}}/fields/{{fieldId}}/rule-books/{{ruleBookId}}
   body: json
   auth: bearer
 }
@@ -25,7 +25,7 @@ body:json {
     "slotSelectionType": "specificSlots",
     "actionType": "fixedPrice",
     "value": 700,
-    "activeDays": ["sunday", "monday"],
+    "activeDays": ["sunday", "monday", "wednesday"],
     "specificSlots": [
       {
         "startTime": "06:00",

@@ -1,0 +1,30 @@
+meta {
+  name: CreateFieldRuleBookAllSlots
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{development}}/fields/{{fieldId}}/rule-books
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+  ~Authorization: Bearer {{token}}
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "ruleName": "Weekend Premium Pricing",
+    "slotSelectionType": "allSlots",
+    "actionType": "fixedPrice",
+    "value": 1500,
+    "activeDays": ["saturday", "sunday"]
+  }
+}
