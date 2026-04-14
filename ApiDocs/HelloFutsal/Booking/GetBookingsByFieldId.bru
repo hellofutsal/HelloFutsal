@@ -1,0 +1,19 @@
+meta {
+  name: GetBookingsByFieldId
+  type: http
+  seq: 15
+}
+
+get {
+  url: {{development}}/bookings/field/{{fieldId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  Content-Type: application/json
+}

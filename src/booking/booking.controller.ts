@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -33,5 +34,14 @@ export class BookingController {
     @Param("slotId", new ParseUUIDPipe()) slotId: string,
   ) {
     return this.bookingService.confirmBooking(account, slotId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("field/:fieldId")
+  listBookingsByField(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+  ) {
+    return this.bookingService.listBookingsByField(account, fieldId);
   }
 }

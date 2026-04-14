@@ -1,0 +1,19 @@
+meta {
+  name: GetFieldRevenue
+  type: http
+  seq: 16
+}
+
+get {
+  url: {{development}}/bookings/field/{{fieldId}}/revenue?startDate=2026-04-01&endDate=2026-04-14
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  Content-Type: application/json
+}
