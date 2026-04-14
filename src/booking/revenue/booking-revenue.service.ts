@@ -189,54 +189,153 @@ export class BookingRevenueService {
     dateRange: { startDate: string; endDate: string } | null;
   }): Promise<Buffer> {
     return new Promise((resolve, reject) => {
-      const document = new PDFDocument({ size: "A4", margin: 50 });
+      const document = new PDFDocument({
+        size: "A4",
+        layout: "landscape",
+        margin: 28,
+      });
       const chunks: Buffer[] = [];
 
       document.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
       document.on("end", () => resolve(Buffer.concat(chunks)));
       document.on("error", reject);
 
-      document.fontSize(20).text("Monthly Booking Report", { align: "center" });
-      document.moveDown(0.75);
-      document
-        .fontSize(12)
-        .text(`${details.fieldName} - ${details.courtName}`, {
-          align: "center",
-        });
-      document.moveDown(0.4);
-
-      if (details.dateRange) {
-        document
-          .fontSize(11)
-          .text(
-            `Period: ${details.dateRange.startDate} to ${details.dateRange.endDate}`,
-            { align: "center" },
-          );
-        document.moveDown(0.5);
-      }
-
-      document
-        .fontSize(12)
-        .text(`Total completed revenue: ${details.totalRevenue.toFixed(2)}`, {
-          align: "center",
-        });
-      document.moveDown(1);
-
-      const columns = [
-        { label: "#", width: 25 },
-        { label: "Booking ID", width: 105 },
-        { label: "Customer", width: 95 },
-        { label: "Mobile", width: 75 },
-        { label: "Date", width: 65 },
-        { label: "Time", width: 75 },
-        { label: "Amount", width: 55 },
-      ];
-
-      const startX = document.page.margins.left;
+      const leftX = document.page.margins.left;
+      const topY = document.page.margins.top;
       const pageWidth =
         document.page.width -
         document.page.margins.left -
         document.page.margins.right;
+
+      const formatCurrency = (value: number): string =>
+        `NPR ${value.toFixed(2)}`;
+      const formatDateLabel = (value: string): string => {
+        const parsed = new Date(`${value}T00:00:00`);
+
+        if (Number.isNaN(parsed.getTime())) {
+          return value;
+        }
+
+        return new Intl.DateTimeFormat("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }).format(parsed);
+      };
+
+      const drawRoundedBox = (
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+        strokeColor: string,
+        fillColor: string,
+      ) => {
+        document
+          .save()
+          .lineWidth(1)
+          .fillColor(fillColor)
+          .strokeColor(strokeColor)
+          .roundedRect(x, y, width, height, 10)
+          .fillAndStroke()
+          .restore();
+      };
+
+      const drawStatCard = (
+        x: number,
+        y: number,
+        width: number,
+        title: string,
+        value: string,
+        accentColor: string,
+      ) => {
+        drawRoundedBox(x, y, width, 66, "#cbd5e1", "#ffffff");
+        document
+          .font("Helvetica")
+          .fillColor("#475569")
+          .fontSize(9)
+          .text(title, x + 16, y + 14, { width: width - 32 });
+        document
+          .font("Helvetica-Bold")
+          .fillColor(accentColor)
+          .fontSize(19)
+          .text(value, x + 16, y + 28, { width: width - 32 });
+      };
+
+      document
+        .fillColor("#0f172a")
+        .font("Helvetica-Bold")
+        .fontSize(22)
+        .text("Monthly Booking Report", leftX, topY + 2, {
+          align: "center",
+          width: pageWidth,
+        });
+
+      document
+        .fillColor("#111827")
+        .font("Helvetica-Bold")
+        .fontSize(13)
+        .text(`${details.fieldName} - ${details.courtName}`, leftX, topY + 46, {
+          align: "center",
+          width: pageWidth,
+        });
+
+      if (details.dateRange) {
+        document
+          .fillColor("#475569")
+          .font("Helvetica")
+          .fontSize(9)
+          .text(
+            `Period: ${formatDateLabel(details.dateRange.startDate)} to ${formatDateLabel(details.dateRange.endDate)}`,
+            leftX,
+            topY + 62,
+            { align: "center", width: pageWidth },
+          );
+      }
+
+      const cardY = topY + 84;
+      const cardGap = 12;
+      const cardWidth = (pageWidth - cardGap * 2) / 3;
+
+      drawStatCard(
+        leftX,
+        cardY,
+        cardWidth,
+        "Total Revenue",
+        formatCurrency(details.totalRevenue),
+        "#0f172a",
+      );
+      drawStatCard(
+        leftX + cardWidth + cardGap,
+        cardY,
+        cardWidth,
+        "Total Bookings",
+        String(details.bookings.length),
+        "#0f172a",
+      );
+      drawStatCard(
+        leftX + (cardWidth + cardGap) * 2,
+        cardY,
+        cardWidth,
+        "Avg. Booking Value",
+        formatCurrency(
+          details.bookings.length > 0
+            ? details.totalRevenue / details.bookings.length
+            : 0,
+        ),
+        "#15803d",
+      );
+
+      const columns = [
+        { label: "#", width: 30 },
+        { label: "Booking ID", width: 136 },
+        { label: "Customer / Mobile", width: 170 },
+        { label: "Date", width: 92 },
+        { label: "Time", width: 112 },
+        { label: "Amount", width: 88 },
+        { label: "Status", width: 84 },
+      ];
+
       const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
       const scale = tableWidth > pageWidth ? pageWidth / tableWidth : 1;
       const scaledColumns = columns.map((column) => ({
@@ -244,34 +343,48 @@ export class BookingRevenueService {
         width: column.width * scale,
       }));
 
-      let y = document.y;
-      const rowHeight = 22;
+      let y = cardY + 86;
+      const headerHeight = 20;
+      const rowHeight = 28;
 
-      const drawRow = (values: string[], isHeader = false) => {
-        let x = startX;
-        values.forEach((value, index) => {
-          const column = scaledColumns[index];
-          document.rect(x, y, column.width, rowHeight).stroke();
-          document.fontSize(isHeader ? 9 : 8).text(value, x + 4, y + 6, {
-            width: column.width - 8,
-            ellipsis: true,
-          });
-          x += column.width;
-        });
-        y += rowHeight;
-      };
-
-      const ensureSpace = () => {
-        if (
-          y + rowHeight >
-          document.page.height - document.page.margins.bottom
-        ) {
+      const ensureSpace = (height = rowHeight) => {
+        if (y + height > document.page.height - document.page.margins.bottom) {
           document.addPage();
           y = document.page.margins.top;
         }
       };
 
-      ensureSpace();
+      const drawRow = (values: string[], isHeader = false) => {
+        let x = leftX;
+
+        values.forEach((value, index) => {
+          const column = scaledColumns[index];
+          const height = isHeader ? headerHeight : rowHeight;
+
+          document
+            .save()
+            .lineWidth(isHeader ? 1 : 0.75)
+            .strokeColor(isHeader ? "#94a3b8" : "#cbd5e1")
+            .rect(x, y, column.width, height)
+            .stroke()
+            .restore();
+
+          document
+            .fillColor("#0f172a")
+            .font(isHeader ? "Helvetica-Bold" : "Helvetica")
+            .fontSize(isHeader ? 8.5 : 8)
+            .text(value, x + 6, y + (isHeader ? 5 : 6), {
+              width: column.width - 12,
+              ellipsis: true,
+            });
+
+          x += column.width;
+        });
+
+        y += isHeader ? headerHeight : rowHeight;
+      };
+
+      ensureSpace(headerHeight + 2);
       drawRow(
         columns.map((column) => column.label),
         true,
@@ -279,18 +392,18 @@ export class BookingRevenueService {
 
       if (details.bookings.length === 0) {
         ensureSpace();
-        drawRow(["-", "No bookings found", "-", "-", "-", "-", "0.00"]);
+        drawRow(["-", "No bookings found", "-", "-", "-", "0.00", "-"]);
       } else {
         details.bookings.forEach((booking, index) => {
           ensureSpace();
           drawRow([
             String(index + 1),
             booking.id,
-            booking.user.name ?? "Unknown",
-            booking.user.mobileNumber ?? "Unknown",
+            `${booking.user.name ?? "Unknown"}\n${booking.user.mobileNumber ?? "Unknown"}`,
             booking.slot.slotDate,
             `${booking.slot.startTime} - ${booking.slot.endTime}`,
             Number(booking.slot.price).toFixed(2),
+            booking.status,
           ]);
         });
       }
@@ -298,8 +411,53 @@ export class BookingRevenueService {
       y += 12;
       ensureSpace();
       document
-        .fontSize(11)
-        .text(`Total bookings: ${details.bookings.length}`, startX, y);
+        .fillColor("#475569")
+        .font("Helvetica")
+        .fontSize(9)
+        .text(
+          `Total bookings: ${details.bookings.length}    Total revenue: ${formatCurrency(details.totalRevenue)}`,
+          leftX,
+          y,
+        );
+
+      const signatureY = y + 34;
+      if (
+        signatureY + 42 >
+        document.page.height - document.page.margins.bottom
+      ) {
+        document.addPage();
+        y = document.page.margins.top;
+      }
+
+      const signatureLineY = signatureY;
+      const signatureBlockWidth = 150;
+      const signatureBlockX =
+        document.page.width - document.page.margins.right - signatureBlockWidth;
+
+      document
+        .moveTo(signatureBlockX, signatureLineY)
+        .lineTo(signatureBlockX + signatureBlockWidth, signatureLineY)
+        .lineWidth(0.8)
+        .strokeColor("#0f172a")
+        .stroke();
+
+      document
+        .fillColor("#0f172a")
+        .font("Helvetica-Bold")
+        .fontSize(10)
+        .text("Authorized Signature", signatureBlockX, signatureLineY + 8, {
+          width: signatureBlockWidth,
+          align: "center",
+        });
+
+      document
+        .fillColor("#64748b")
+        .font("Helvetica")
+        .fontSize(8)
+        .text("Admin / Owner", signatureBlockX, signatureLineY + 22, {
+          width: signatureBlockWidth,
+          align: "center",
+        });
 
       document.end();
     });
