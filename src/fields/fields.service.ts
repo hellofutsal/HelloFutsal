@@ -253,7 +253,10 @@ export class FieldsService {
     }
   }
 
-  async listSlotsByField(fieldId: string) {
+  async listSlotsByField(
+    fieldId: string,
+    dateRange?: { startDate?: string; endDate?: string },
+  ) {
     const field = await this.fieldsRepository.findOne({
       where: { id: fieldId, isActive: true },
     });
@@ -262,13 +265,37 @@ export class FieldsService {
       throw new NotFoundException("Field not found");
     }
 
-    return this.fieldSlotsRepository.find({
-      where: { fieldId },
-      order: {
-        slotDate: "ASC",
-        startTime: "ASC",
-      },
-    });
+    const { startDate, endDate } = dateRange ?? {};
+    if ((startDate && !endDate) || (!startDate && endDate)) {
+      throw new BadRequestException(
+        "startDate and endDate must be provided together",
+      );
+    }
+
+    if (startDate && endDate && endDate < startDate) {
+      throw new BadRequestException("endDate must be on or after startDate");
+    }
+
+    const queryBuilder = this.fieldSlotsRepository
+      .createQueryBuilder("slot")
+      .where("slot.field_id = :fieldId", { fieldId });
+
+    if (startDate && endDate) {
+      queryBuilder.andWhere("slot.slot_date BETWEEN :startDate AND :endDate", {
+        startDate,
+        endDate,
+      });
+    }
+
+    const slots = await queryBuilder
+      .orderBy("slot.slot_date", "ASC")
+      .addOrderBy("slot.start_time", "ASC")
+      .getMany();
+
+    return slots.map((slot) => ({
+      ...slot,
+      slotType: slot.status,
+    }));
   }
 
   async createScheduleSettings(

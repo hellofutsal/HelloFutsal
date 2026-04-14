@@ -131,7 +131,7 @@ export class FieldSlotSyncService {
               this.normalizeTimeForKey(slot.startTime),
             );
             if (existingSlot) {
-              if (existingSlot.status !== "booked") {
+              if (!this.isProtectedSlotStatus(existingSlot.status)) {
                 existingSlot.price = resolvedPrice;
                 existingSlot.endTime = slot.endTime;
                 if (existingSlot.status !== "cancelled") {
@@ -164,7 +164,7 @@ export class FieldSlotSyncService {
               continue;
             }
 
-            if (existingSlot.status === "booked") {
+            if (this.isProtectedSlotStatus(existingSlot.status)) {
               continue;
             }
 
@@ -229,7 +229,7 @@ export class FieldSlotSyncService {
         .getMany();
 
       const updatableSlots = slotsToRetire.filter(
-        (slot) => slot.status !== "booked" && slot.status !== "blocked",
+        (slot) => !this.isProtectedSlotStatus(slot.status),
       );
 
       if (updatableSlots.length === 0) {
@@ -294,7 +294,7 @@ export class FieldSlotSyncService {
             .getMany();
 
           const slotsToRetire = existingSlots.filter(
-            (slot) => slot.status !== "booked" && slot.status !== "blocked",
+            (slot) => !this.isProtectedSlotStatus(slot.status),
           );
 
           if (slotsToRetire.length === 0) {
@@ -386,6 +386,10 @@ export class FieldSlotSyncService {
     const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
     const day = String(parsed.getUTCDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
+  }
+
+  private isProtectedSlotStatus(status: FieldSlot["status"]): boolean {
+    return status === "booked" || status === "completed";
   }
 
   private normalizeTimeForKey(time: string): string {

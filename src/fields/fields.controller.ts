@@ -8,6 +8,7 @@ import {
   ParseArrayPipe,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { plainToInstance } from "class-transformer";
@@ -19,6 +20,7 @@ import { CreateFieldDto } from "./dto/create-field.dto";
 import { CreateFieldRuleBookDto } from "./dto/create-field-rule-book.dto";
 import { CreateFieldScheduleSettingsDto } from "./dto/create-field-schedule-settings.dto";
 import { CreateFieldSlotDto } from "./dto/create-field-slot.dto";
+import { GetFieldSlotsQueryDto } from "./dto/get-field-slots-query.dto";
 import { FieldsService } from "./fields.service";
 
 @Controller("fields")
@@ -88,8 +90,12 @@ export class FieldsController {
   }
 
   @Get(":fieldId/slots")
-  getSlotsByField(@Param("fieldId", new ParseUUIDPipe()) fieldId: string) {
-    return this.fieldsService.listSlotsByField(fieldId);
+  getSlotsByField(
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Query() payload: GetFieldSlotsQueryDto,
+  ) {
+    const query = this.validateSlotsQueryDto(payload, "query");
+    return this.fieldsService.listSlotsByField(fieldId, query);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -159,6 +165,24 @@ export class FieldsController {
 
   private validateSlotDto(value: unknown, label: string): CreateFieldSlotDto {
     const dto = plainToInstance(CreateFieldSlotDto, value);
+    const errors = validateSync(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    if (errors.length > 0) {
+      const message = this.collectValidationMessages(errors).join(", ");
+      throw new BadRequestException(`${label}: ${message}`);
+    }
+
+    return dto;
+  }
+
+  private validateSlotsQueryDto(
+    value: unknown,
+    label: string,
+  ): GetFieldSlotsQueryDto {
+    const dto = plainToInstance(GetFieldSlotsQueryDto, value);
     const errors = validateSync(dto, {
       whitelist: true,
       forbidNonWhitelisted: true,
