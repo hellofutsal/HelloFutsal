@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -228,6 +229,12 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedException("Account not found");
+    }
+
+    if (!user.passwordHash) {
+      throw new ForbiddenException(
+        "Password setup required. Please set your password to continue.",
+      );
     }
 
     await this.assertPasswordMatches(loginDto.password, user.passwordHash);

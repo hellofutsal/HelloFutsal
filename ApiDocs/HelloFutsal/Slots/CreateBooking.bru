@@ -1,0 +1,26 @@
+meta {
+  name: CreateBooking
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{development}}/bookings
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+body:json {
+  {
+    "slotId": "{{slotId}}",
+    "userName": "John Doe",
+    "phoneNumber": "+9779800000000"
+  }
+}

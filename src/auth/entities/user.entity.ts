@@ -23,8 +23,8 @@ export class UserAccount {
   @Column({ name: "mobile_number", unique: true, nullable: true })
   mobileNumber?: string;
 
-  @Column({ name: "password_hash" })
-  passwordHash!: string;
+  @Column({ name: "password_hash", nullable: true })
+  passwordHash?: string | null;
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;

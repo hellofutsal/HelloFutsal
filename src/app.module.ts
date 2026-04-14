@@ -7,6 +7,7 @@ import { join } from "path";
 import { AuthModule } from "./auth/auth.module";
 import { GroundOwnerAccount } from "./auth/entities/ground-owner.entity";
 import { UserAccount } from "./auth/entities/user.entity";
+import { BookingModule } from "./booking/booking.module";
 import { FieldRuleBook } from "./fields/entities/field-rule-book.entity";
 import { Field } from "./fields/entities/field.entity";
 import { FieldScheduleSettings } from "./fields/entities/field-schedule-settings.entity";
@@ -136,6 +137,7 @@ function getDatabaseConfig(configService: ConfigService) {
       },
     }),
     AuthModule,
+    BookingModule,
     FieldsModule,
     KeepAliveModule,
   ],
