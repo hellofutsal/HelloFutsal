@@ -4,8 +4,10 @@ import {
   Param,
   ParseUUIDPipe,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import { Response } from "express";
 import { CurrentAccount } from "../../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../../auth/types/authenticated-account.type";
@@ -24,5 +26,30 @@ export class BookingRevenueController {
     @Query() query: GetFieldBookingRevenueQueryDto,
   ) {
     return this.bookingRevenueService.getFieldRevenue(account, fieldId, query);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("field/:fieldId/revenue/pdf")
+  async downloadBookingPdf(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Query() query: GetFieldBookingRevenueQueryDto,
+    @Res() response: Response,
+  ) {
+    const { buffer, filename } =
+      await this.bookingRevenueService.downloadBookingPdf(
+        account,
+        fieldId,
+        query,
+      );
+
+    response.setHeader("Content-Type", "application/pdf");
+    response.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`,
+    );
+    response.setHeader("Content-Length", buffer.length.toString());
+
+    return response.status(200).send(buffer);
   }
 }

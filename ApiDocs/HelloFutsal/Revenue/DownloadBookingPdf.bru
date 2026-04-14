@@ -1,0 +1,19 @@
+meta {
+  name: DownloadBookingPdf
+  type: http
+  seq: 17
+}
+
+get {
+  url: {{development}}/bookings/field/{{fieldId}}/revenue/pdf?startDate=2026-04-01&endDate=2026-04-30
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  Accept: application/pdf
+}
