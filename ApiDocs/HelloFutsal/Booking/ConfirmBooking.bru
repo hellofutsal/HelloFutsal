@@ -1,0 +1,19 @@
+meta {
+  name: ConfirmBooking
+  type: http
+  seq: 14
+}
+
+patch {
+  url: {{development}}/bookings/{{slotId}}/confirm
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  Content-Type: application/json
+}

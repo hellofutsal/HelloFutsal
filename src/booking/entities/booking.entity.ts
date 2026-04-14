@@ -1,0 +1,60 @@
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from "typeorm";
+import { UserAccount } from "../../auth/entities/user.entity";
+import { Field } from "../../fields/entities/field.entity";
+import { FieldSlot } from "../../fields/entities/field-slot.entity";
+
+export type BookingStatus = "booked" | "completed" | "cancelled";
+
+@Entity({ name: "bookings" })
+@Index(["fieldId"])
+@Index(["slotId"], { unique: true })
+@Index(["userId"])
+export class Booking {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Column({ name: "field_id", type: "uuid" })
+  fieldId!: string;
+
+  @ManyToOne(() => Field, {
+    onDelete: "CASCADE",
+  })
+  @JoinColumn({ name: "field_id" })
+  field!: Field;
+
+  @Column({ name: "slot_id", type: "uuid" })
+  slotId!: string;
+
+  @ManyToOne(() => FieldSlot, {
+    onDelete: "CASCADE",
+  })
+  @JoinColumn({ name: "slot_id" })
+  slot!: FieldSlot;
+
+  @Column({ name: "user_id", type: "uuid" })
+  userId!: string;
+
+  @ManyToOne(() => UserAccount, {
+    onDelete: "CASCADE",
+  })
+  @JoinColumn({ name: "user_id" })
+  user!: UserAccount;
+
+  @Column({ name: "status", type: "varchar", default: "booked" })
+  status!: BookingStatus;
+
+  @CreateDateColumn({ name: "created_at" })
+  createdAt!: Date;
+
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt!: Date;
+}
