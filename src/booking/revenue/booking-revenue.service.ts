@@ -300,11 +300,11 @@ export class BookingRevenueService {
 
       document
         .fillColor("#475569")
-        .font("Helvetica")
+        .font("Helvetica-Bold")
         .fontSize(7)
-        .text("PAN No :", leftX, topY + 28, {
-          align: "center",
-          width: tableAreaWidth,
+        .text("PAN NO :", leftX, topY + 28, {
+          align: "left",
+          width: 120,
         });
 
       if (details.dateRange) {
