@@ -334,13 +334,6 @@ export class BookingRevenueService {
       const headerHeight = 12;
       const rowHeight = 16;
 
-      const ensureSpace = (height = rowHeight) => {
-        if (y + height > document.page.height - document.page.margins.bottom) {
-          document.addPage();
-          y = document.page.margins.top;
-        }
-      };
-
       const drawRow = (values: string[], isHeader = false) => {
         let x = leftX;
 
@@ -371,11 +364,25 @@ export class BookingRevenueService {
         y += isHeader ? headerHeight : rowHeight;
       };
 
-      ensureSpace(headerHeight + 2);
-      drawRow(
-        columns.map((column) => column.label),
-        true,
-      );
+      const drawTableHeader = () => {
+        drawRow(
+          columns.map((column) => column.label),
+          true,
+        );
+      };
+
+      const ensureSpace = (height = rowHeight, redrawHeader = true) => {
+        if (y + height > document.page.height - document.page.margins.bottom) {
+          document.addPage();
+          y = document.page.margins.top;
+          if (redrawHeader) {
+            drawTableHeader();
+          }
+        }
+      };
+
+      ensureSpace(headerHeight + 2, false);
+      drawTableHeader();
 
       if (details.bookings.length === 0) {
         ensureSpace();
