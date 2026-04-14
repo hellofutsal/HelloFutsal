@@ -5,8 +5,14 @@ meta {
 }
 
 get {
-  url: {{development}}/fields/{{fieldId}}/slots
+  url: {{development}}/fields/{{fieldId}}/slots?startDate=2026-04-12&endDate=2026-04-12
+  body: none
   auth: none
+}
+
+query {
+  startDate: 2026-04-12
+  endDate: 2026-04-12
 }
 
 headers {

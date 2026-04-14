@@ -10,7 +10,12 @@ import {
 } from "typeorm";
 import { Field } from "./field.entity";
 
-export type FieldSlotStatus = "available" | "booked" | "blocked" | "cancelled";
+export type FieldSlotStatus =
+  | "available"
+  | "booked"
+  | "completed"
+  | "blocked"
+  | "cancelled";
 
 @Entity({ name: "field_slots" })
 @Index(["fieldId", "slotDate", "startTime"], { unique: true })
