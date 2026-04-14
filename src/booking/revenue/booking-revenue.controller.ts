@@ -43,6 +43,9 @@ export class BookingRevenueController {
         query,
       );
 
+    response.setHeader("Cache-Control", "private, no-store, max-age=0");
+    response.setHeader("Pragma", "no-cache");
+    response.setHeader("Expires", "0");
     response.setHeader("Content-Type", "application/pdf");
     response.setHeader(
       "Content-Disposition",

@@ -14,6 +14,9 @@ import { GetFieldBookingRevenueQueryDto } from "./dto/get-field-booking-revenue-
 
 @Injectable()
 export class BookingRevenueService {
+  private static readonly MAX_REPORT_DAYS = 31;
+  private static readonly MAX_REPORT_BOOKINGS = 500;
+
   constructor(
     @InjectRepository(Booking)
     private readonly bookingsRepository: Repository<Booking>,
@@ -31,9 +34,11 @@ export class BookingRevenueService {
     const field = await this.fieldsRepository
       .createQueryBuilder("field")
       .select("field.id", "id")
+      .addSelect("field.venueName", "venueName")
+      .addSelect("field.fieldName", "fieldName")
       .where("field.id = :fieldId", { fieldId })
       .andWhere("field.owner_id = :ownerId", { ownerId: account.id })
-      .getRawOne<{ id: string }>();
+      .getRawOne<{ id: string; venueName: string; fieldName: string }>();
 
     if (!field) {
       throw new NotFoundException("Field not found");
@@ -106,9 +111,11 @@ export class BookingRevenueService {
     const field = await this.fieldsRepository
       .createQueryBuilder("field")
       .select("field.id", "id")
+      .addSelect("field.venueName", "venueName")
+      .addSelect("field.fieldName", "fieldName")
       .where("field.id = :fieldId", { fieldId })
       .andWhere("field.owner_id = :ownerId", { ownerId: account.id })
-      .getRawOne<{ id: string }>();
+      .getRawOne<{ id: string; venueName: string; fieldName: string }>();
 
     if (!field) {
       throw new NotFoundException("Field not found");
@@ -126,6 +133,8 @@ export class BookingRevenueService {
     if (query.startDate && query.endDate && query.endDate < query.startDate) {
       throw new ConflictException("endDate must be on or after startDate");
     }
+
+    this.ensureBoundedReportWindow(query);
 
     const bookingsQuery = this.bookingsRepository
       .createQueryBuilder("booking")
@@ -156,8 +165,8 @@ export class BookingRevenueService {
     }, 0);
 
     const buffer = await this.createMonthlyBookingsPdfBuffer({
-      fieldName: bookings[0]?.field.venueName ?? "Field",
-      courtName: bookings[0]?.field.fieldName ?? "Booking Report",
+      venueName: field.venueName,
+      fieldName: field.fieldName,
       bookings,
       totalRevenue,
       dateRange:
@@ -181,9 +190,34 @@ export class BookingRevenueService {
     }
   }
 
+  private ensureBoundedReportWindow(
+    query: GetFieldBookingRevenueQueryDto,
+  ): void {
+    if (!query.startDate || !query.endDate) {
+      throw new ConflictException(
+        "startDate and endDate are required for PDF export",
+      );
+    }
+
+    const startDate = new Date(`${query.startDate}T00:00:00`);
+    const endDate = new Date(`${query.endDate}T23:59:59.999`);
+    const dayDifference =
+      (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+
+    if (dayDifference < 0) {
+      throw new ConflictException("endDate must be on or after startDate");
+    }
+
+    if (dayDifference > BookingRevenueService.MAX_REPORT_DAYS - 1) {
+      throw new ConflictException(
+        `PDF export is limited to ${BookingRevenueService.MAX_REPORT_DAYS} days`,
+      );
+    }
+  }
+
   private async createMonthlyBookingsPdfBuffer(details: {
+    venueName: string;
     fieldName: string;
-    courtName: string;
     bookings: Booking[];
     totalRevenue: number;
     dateRange: { startDate: string; endDate: string } | null;
@@ -192,7 +226,7 @@ export class BookingRevenueService {
       const document = new PDFDocument({
         size: "A4",
         layout: "landscape",
-        margin: 28,
+        margin: 14,
       });
       const chunks: Buffer[] = [];
 
@@ -209,6 +243,8 @@ export class BookingRevenueService {
 
       const formatCurrency = (value: number): string =>
         `NPR ${value.toFixed(2)}`;
+      const formatAmount = (value: number): string =>
+        Number.isNaN(value) ? "NPR 0.00" : formatCurrency(value);
       const formatDateLabel = (value: string): string => {
         const parsed = new Date(`${value}T00:00:00`);
 
@@ -223,117 +259,14 @@ export class BookingRevenueService {
         }).format(parsed);
       };
 
-      const drawRoundedBox = (
-        x: number,
-        y: number,
-        width: number,
-        height: number,
-        strokeColor: string,
-        fillColor: string,
-      ) => {
-        document
-          .save()
-          .lineWidth(1)
-          .fillColor(fillColor)
-          .strokeColor(strokeColor)
-          .roundedRect(x, y, width, height, 10)
-          .fillAndStroke()
-          .restore();
-      };
-
-      const drawStatCard = (
-        x: number,
-        y: number,
-        width: number,
-        title: string,
-        value: string,
-        accentColor: string,
-      ) => {
-        drawRoundedBox(x, y, width, 66, "#cbd5e1", "#ffffff");
-        document
-          .font("Helvetica")
-          .fillColor("#475569")
-          .fontSize(9)
-          .text(title, x + 16, y + 14, { width: width - 32 });
-        document
-          .font("Helvetica-Bold")
-          .fillColor(accentColor)
-          .fontSize(19)
-          .text(value, x + 16, y + 28, { width: width - 32 });
-      };
-
-      document
-        .fillColor("#0f172a")
-        .font("Helvetica-Bold")
-        .fontSize(22)
-        .text("Monthly Booking Report", leftX, topY + 2, {
-          align: "center",
-          width: pageWidth,
-        });
-
-      document
-        .fillColor("#111827")
-        .font("Helvetica-Bold")
-        .fontSize(13)
-        .text(`${details.fieldName} - ${details.courtName}`, leftX, topY + 46, {
-          align: "center",
-          width: pageWidth,
-        });
-
-      if (details.dateRange) {
-        document
-          .fillColor("#475569")
-          .font("Helvetica")
-          .fontSize(9)
-          .text(
-            `Period: ${formatDateLabel(details.dateRange.startDate)} to ${formatDateLabel(details.dateRange.endDate)}`,
-            leftX,
-            topY + 62,
-            { align: "center", width: pageWidth },
-          );
-      }
-
-      const cardY = topY + 84;
-      const cardGap = 12;
-      const cardWidth = (pageWidth - cardGap * 2) / 3;
-
-      drawStatCard(
-        leftX,
-        cardY,
-        cardWidth,
-        "Total Revenue",
-        formatCurrency(details.totalRevenue),
-        "#0f172a",
-      );
-      drawStatCard(
-        leftX + cardWidth + cardGap,
-        cardY,
-        cardWidth,
-        "Total Bookings",
-        String(details.bookings.length),
-        "#0f172a",
-      );
-      drawStatCard(
-        leftX + (cardWidth + cardGap) * 2,
-        cardY,
-        cardWidth,
-        "Avg. Booking Value",
-        formatCurrency(
-          details.bookings.length > 0
-            ? details.totalRevenue / details.bookings.length
-            : 0,
-        ),
-        "#15803d",
-      );
-
       const columns = [
-        { label: "#", width: 30 },
-        { label: "Booking ID", width: 136 },
-        { label: "Customer / Mobile", width: 170 },
-        { label: "Date", width: 92 },
-        { label: "Time", width: 112 },
-        { label: "Amount", width: 88 },
-        { label: "Status", width: 84 },
+        { label: "#", width: 22 },
+        { label: "Booking ID", width: 108 },
+        { label: "Customer / Mobile", width: 132 },
+        { label: "Date", width: 72 },
+        { label: "Time", width: 84 },
+        { label: "Amount", width: 62 },
+        { label: "Status", width: 60 },
       ];
 
       const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
@@ -342,10 +275,54 @@ export class BookingRevenueService {
         ...column,
         width: column.width * scale,
       }));
+      const tableAreaWidth = scaledColumns.reduce(
+        (sum, column) => sum + column.width,
+        0,
+      );
 
-      let y = cardY + 86;
-      const headerHeight = 20;
-      const rowHeight = 28;
+      document
+        .fillColor("#0f172a")
+        .font("Helvetica-Bold")
+        .fontSize(14)
+        .text("Booking Report", leftX, topY + 2, {
+          align: "center",
+          width: tableAreaWidth,
+        });
+
+      document
+        .fillColor("#111827")
+        .font("Helvetica-Bold")
+        .fontSize(8.5)
+        .text(`${details.venueName} - ${details.fieldName}`, leftX, topY + 20, {
+          align: "center",
+          width: tableAreaWidth,
+        });
+
+      document
+        .fillColor("#475569")
+        .font("Helvetica")
+        .fontSize(7)
+        .text("PAN No :", leftX, topY + 28, {
+          align: "center",
+          width: tableAreaWidth,
+        });
+
+      if (details.dateRange) {
+        document
+          .fillColor("#475569")
+          .font("Helvetica")
+          .fontSize(7)
+          .text(
+            `Period: ${formatDateLabel(details.dateRange.startDate)} to ${formatDateLabel(details.dateRange.endDate)}`,
+            leftX,
+            topY + 36,
+            { align: "center", width: tableAreaWidth },
+          );
+      }
+
+      let y = topY + 52;
+      const headerHeight = 12;
+      const rowHeight = 16;
 
       const ensureSpace = (height = rowHeight) => {
         if (y + height > document.page.height - document.page.margins.bottom) {
@@ -372,8 +349,8 @@ export class BookingRevenueService {
           document
             .fillColor("#0f172a")
             .font(isHeader ? "Helvetica-Bold" : "Helvetica")
-            .fontSize(isHeader ? 8.5 : 8)
-            .text(value, x + 6, y + (isHeader ? 5 : 6), {
+            .fontSize(isHeader ? 6.5 : 6)
+            .text(value, x + 4, y + (isHeader ? 2 : 3), {
               width: column.width - 12,
               ellipsis: true,
             });
@@ -394,35 +371,46 @@ export class BookingRevenueService {
         ensureSpace();
         drawRow(["-", "No bookings found", "-", "-", "-", "0.00", "-"]);
       } else {
+        if (
+          details.bookings.length > BookingRevenueService.MAX_REPORT_BOOKINGS
+        ) {
+          throw new ConflictException(
+            `PDF export is limited to ${BookingRevenueService.MAX_REPORT_BOOKINGS} bookings`,
+          );
+        }
+
         details.bookings.forEach((booking, index) => {
           ensureSpace();
+          const price = Number(booking.slot.price);
           drawRow([
             String(index + 1),
             booking.id,
             `${booking.user.name ?? "Unknown"}\n${booking.user.mobileNumber ?? "Unknown"}`,
             booking.slot.slotDate,
             `${booking.slot.startTime} - ${booking.slot.endTime}`,
-            Number(booking.slot.price).toFixed(2),
+            formatAmount(price),
             booking.status,
           ]);
         });
       }
 
-      y += 12;
       ensureSpace();
-      document
-        .fillColor("#475569")
-        .font("Helvetica")
-        .fontSize(9)
-        .text(
-          `Total bookings: ${details.bookings.length}    Total revenue: ${formatCurrency(details.totalRevenue)}`,
-          leftX,
-          y,
-        );
+      drawRow(
+        [
+          "",
+          "Total",
+          "",
+          "",
+          "",
+          formatCurrency(details.totalRevenue),
+          String(details.bookings.length),
+        ],
+        false,
+      );
 
-      const signatureY = y + 34;
+      const signatureY = y + 14;
       if (
-        signatureY + 42 >
+        signatureY + 24 >
         document.page.height - document.page.margins.bottom
       ) {
         document.addPage();
@@ -430,21 +418,20 @@ export class BookingRevenueService {
       }
 
       const signatureLineY = signatureY;
-      const signatureBlockWidth = 150;
-      const signatureBlockX =
-        document.page.width - document.page.margins.right - signatureBlockWidth;
+      const signatureBlockWidth = 110;
+      const signatureBlockX = leftX + tableAreaWidth - signatureBlockWidth;
 
       document
         .moveTo(signatureBlockX, signatureLineY)
         .lineTo(signatureBlockX + signatureBlockWidth, signatureLineY)
-        .lineWidth(0.8)
+        .lineWidth(0.6)
         .strokeColor("#0f172a")
         .stroke();
 
       document
         .fillColor("#0f172a")
         .font("Helvetica-Bold")
-        .fontSize(10)
+        .fontSize(7)
         .text("Authorized Signature", signatureBlockX, signatureLineY + 8, {
           width: signatureBlockWidth,
           align: "center",
@@ -453,7 +440,7 @@ export class BookingRevenueService {
       document
         .fillColor("#64748b")
         .font("Helvetica")
-        .fontSize(8)
+        .fontSize(6)
         .text("Admin / Owner", signatureBlockX, signatureLineY + 22, {
           width: signatureBlockWidth,
           align: "center",
