@@ -10,6 +10,7 @@ import { GroundOwnerAccount } from "../auth/entities/ground-owner.entity";
 import { UserAccount } from "../auth/entities/user.entity";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { Booking } from "./entities/booking.entity";
+import { Field } from "../fields/entities/field.entity";
 import { FieldSlot } from "../fields/entities/field-slot.entity";
 import { CreateBookingDto } from "./dto/create-booking.dto";
 
@@ -198,6 +199,59 @@ export class BookingService {
         message: "Booking confirmed successfully",
       };
     });
+  }
+
+  async listBookingsByField(account: AuthenticatedAccount, fieldId: string) {
+    this.ensureAdmin(account);
+
+    const field = await this.fieldSlotsRepository.manager
+      .getRepository(Field)
+      .createQueryBuilder("field")
+      .select("field.id", "id")
+      .where("field.id = :fieldId", { fieldId })
+      .andWhere("field.owner_id = :ownerId", { ownerId: account.id })
+      .getRawOne<{ id: string }>();
+
+    if (!field) {
+      throw new NotFoundException("Field not found");
+    }
+
+    const bookings = await this.bookingsRepository
+      .createQueryBuilder("booking")
+      .innerJoinAndSelect("booking.user", "user")
+      .innerJoinAndSelect("booking.slot", "slot")
+      .innerJoinAndSelect("booking.field", "field")
+      .where("booking.field_id = :fieldId", { fieldId })
+      .andWhere("field.owner_id = :ownerId", { ownerId: account.id })
+      .orderBy("slot.slot_date", "ASC")
+      .addOrderBy("slot.start_time", "ASC")
+      .getMany();
+
+    return bookings.map((booking) => ({
+      booking: {
+        id: booking.id,
+        status: booking.status,
+        createdAt: booking.createdAt,
+        updatedAt: booking.updatedAt,
+      },
+      customer: {
+        id: booking.user.id,
+        name: booking.user.name,
+        mobileNumber: booking.user.mobileNumber,
+        username: booking.user.username,
+        email: booking.user.email,
+      },
+      field: {
+        id: booking.fieldId,
+      },
+      slot: {
+        id: booking.slotId,
+        slotDate: booking.slot.slotDate,
+        startTime: booking.slot.startTime,
+        endTime: booking.slot.endTime,
+        status: booking.slot.status,
+      },
+    }));
   }
 
   private ensureAdmin(account: AuthenticatedAccount): void {
