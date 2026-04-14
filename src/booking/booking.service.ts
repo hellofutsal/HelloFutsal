@@ -100,6 +100,51 @@ export class BookingService {
     }
   }
 
+  async confirmBooking(account: AuthenticatedAccount, slotId: string) {
+    this.ensureAdmin(account);
+
+    return this.fieldSlotsRepository.manager.transaction(async (manager) => {
+      const slotRepository = manager.getRepository(FieldSlot);
+
+      const slot = await slotRepository
+        .createQueryBuilder("slot")
+        .innerJoinAndSelect("slot.field", "field")
+        .where("slot.id = :slotId", { slotId })
+        .andWhere("field.owner_id = :ownerId", { ownerId: account.id })
+        .setLock("pessimistic_write")
+        .getOne();
+
+      if (!slot) {
+        throw new NotFoundException("Slot not found");
+      }
+
+      if (slot.status === "completed") {
+        throw new ConflictException("Booking is already confirmed");
+      }
+
+      if (slot.status !== "booked") {
+        throw new ConflictException(
+          "Only booked slots can be confirmed as completed",
+        );
+      }
+
+      slot.status = "completed";
+      await slotRepository.save(slot);
+
+      return {
+        slot: {
+          id: slot.id,
+          fieldId: slot.fieldId,
+          slotDate: slot.slotDate,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          status: slot.status,
+        },
+        message: "Booking confirmed successfully",
+      };
+    });
+  }
+
   private ensureAdmin(account: AuthenticatedAccount): void {
     if (account.role !== "admin") {
       throw new ForbiddenException("Only admins can create bookings");

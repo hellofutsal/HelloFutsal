@@ -1,4 +1,12 @@
-import { Body, Controller, Post, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
@@ -16,5 +24,14 @@ export class BookingController {
     @Body() createBookingDto: CreateBookingDto,
   ) {
     return this.bookingService.createBooking(account, createBookingDto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(":slotId/confirm")
+  confirmBooking(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("slotId", new ParseUUIDPipe()) slotId: string,
+  ) {
+    return this.bookingService.confirmBooking(account, slotId);
   }
 }
