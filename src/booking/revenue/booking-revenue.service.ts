@@ -159,6 +159,12 @@ export class BookingRevenueService {
       .addOrderBy("slot.start_time", "ASC")
       .getMany();
 
+    if (bookings.length > BookingRevenueService.MAX_REPORT_BOOKINGS) {
+      throw new ConflictException(
+        `PDF export is limited to ${BookingRevenueService.MAX_REPORT_BOOKINGS} bookings`,
+      );
+    }
+
     const totalRevenue = bookings.reduce((sum, booking) => {
       const price = Number(booking.slot.price);
       return sum + (Number.isNaN(price) ? 0 : price);
@@ -199,10 +205,14 @@ export class BookingRevenueService {
       );
     }
 
-    const startDate = new Date(`${query.startDate}T00:00:00`);
-    const endDate = new Date(`${query.endDate}T23:59:59.999`);
-    const dayDifference =
-      (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+    const [startYear, startMonth, startDay] = query.startDate
+      .split("-")
+      .map(Number);
+    const [endYear, endMonth, endDay] = query.endDate.split("-").map(Number);
+
+    const startUtc = Date.UTC(startYear, startMonth - 1, startDay);
+    const endUtc = Date.UTC(endYear, endMonth - 1, endDay);
+    const dayDifference = (endUtc - startUtc) / (1000 * 60 * 60 * 24);
 
     if (dayDifference < 0) {
       throw new ConflictException("endDate must be on or after startDate");
@@ -371,14 +381,6 @@ export class BookingRevenueService {
         ensureSpace();
         drawRow(["-", "No bookings found", "-", "-", "-", "0.00", "-"]);
       } else {
-        if (
-          details.bookings.length > BookingRevenueService.MAX_REPORT_BOOKINGS
-        ) {
-          throw new ConflictException(
-            `PDF export is limited to ${BookingRevenueService.MAX_REPORT_BOOKINGS} bookings`,
-          );
-        }
-
         details.bookings.forEach((booking, index) => {
           ensureSpace();
           const price = Number(booking.slot.price);
@@ -408,16 +410,16 @@ export class BookingRevenueService {
         false,
       );
 
-      const signatureY = y + 14;
+      let signatureLineY = y + 14;
       if (
-        signatureY + 24 >
+        signatureLineY + 24 >
         document.page.height - document.page.margins.bottom
       ) {
         document.addPage();
         y = document.page.margins.top;
+        signatureLineY = y + 14;
       }
 
-      const signatureLineY = signatureY;
       const signatureBlockWidth = 110;
       const signatureBlockX = leftX + tableAreaWidth - signatureBlockWidth;
 
