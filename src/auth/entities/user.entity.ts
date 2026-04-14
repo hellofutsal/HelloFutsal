@@ -23,7 +23,7 @@ export class UserAccount {
   @Column({ name: "mobile_number", unique: true, nullable: true })
   mobileNumber?: string;
 
-  @Column({ name: "password_hash", nullable: true })
+  @Column({ name: "password_hash", type: "varchar", nullable: true })
   passwordHash?: string | null;
 
   @CreateDateColumn({ name: "created_at" })
