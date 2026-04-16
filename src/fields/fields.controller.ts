@@ -10,13 +10,17 @@ import {
   Post,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { plainToInstance } from "class-transformer";
 import { ValidationError, validateSync } from "class-validator";
 import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { CreateFieldDto } from "./dto/create-field.dto";
+import { CreateFieldWithImageDto } from "./dto/create-field-with-image.dto";
 import { CreateFieldRuleBookDto } from "./dto/create-field-rule-book.dto";
 import { CreateFieldScheduleSettingsDto } from "./dto/create-field-schedule-settings.dto";
 import { CreateFieldSlotDto } from "./dto/create-field-slot.dto";
@@ -53,6 +57,19 @@ export class FieldsController {
 
     const createFieldDto = this.validateDto(payload, "field");
     return this.fieldsService.create(account, createFieldDto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("with-image")
+  @UseInterceptors(FileInterceptor("image"))
+  createWithImage(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Body() payload: CreateFieldWithImageDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    const dto = this.validateCreateFieldWithImageDto(payload, "field");
+    dto.image = file;
+    return this.fieldsService.createWithImage(account, dto);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -219,6 +236,24 @@ export class FieldsController {
     label: string,
   ): CreateFieldRuleBookDto {
     const dto = plainToInstance(CreateFieldRuleBookDto, value);
+    const errors = validateSync(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    if (errors.length > 0) {
+      const message = this.collectValidationMessages(errors).join(", ");
+      throw new BadRequestException(`${label}: ${message}`);
+    }
+
+    return dto;
+  }
+
+  private validateCreateFieldWithImageDto(
+    value: unknown,
+    label: string,
+  ): CreateFieldWithImageDto {
+    const dto = plainToInstance(CreateFieldWithImageDto, value);
     const errors = validateSync(dto, {
       whitelist: true,
       forbidNonWhitelisted: true,

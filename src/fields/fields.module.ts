@@ -8,6 +8,7 @@ import { FieldSlotCronService } from "./cron/field-slot-cron.service";
 import { FieldSlotSyncService } from "./cron/field-slot-sync.service";
 import { FieldsController } from "./fields.controller";
 import { FieldsService } from "./fields.service";
+import { SupabaseStorageService } from "../shared/services/supabase-storage.service";
 
 @Module({
   imports: [
@@ -19,7 +20,12 @@ import { FieldsService } from "./fields.service";
     ]),
   ],
   controllers: [FieldsController],
-  providers: [FieldsService, FieldSlotCronService, FieldSlotSyncService],
+  providers: [
+    FieldsService,
+    FieldSlotCronService,
+    FieldSlotSyncService,
+    SupabaseStorageService,
+  ],
   exports: [FieldsService],
 })
 export class FieldsModule {}
