@@ -1,0 +1,37 @@
+meta {
+  name: CreateFieldWithImage
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{development}}/fields/with-image
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  ~Authorization: Bearer $TOKEN
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:form-urlencoded {
+  venueName: Ayush Field Image Test
+  fieldName: Field A - 7-a-side
+  playerCapacity: 5
+  city: Kathmandu
+  address: 123 Sports Lane
+  description: Premium futsal field with image
+  image: (file)
+}
+
+body:multipart-form {
+  venueName: test299
+  fieldName: test image
+  playerCapacity: 1
+  address: testing 1,2,3,45,
+  image: @file(/Users/ayushadhikari/Desktop/IMG_8530 copy.jpg)
+}

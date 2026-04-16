@@ -10,6 +10,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Brackets, QueryFailedError, Repository } from "typeorm";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { CreateFieldDto } from "./dto/create-field.dto";
+import { CreateFieldWithImageDto } from "./dto/create-field-with-image.dto";
 import {
   CreateFieldRuleBookDto,
   RuleBookActionType,
@@ -23,6 +24,7 @@ import { FieldRuleBook } from "./entities/field-rule-book.entity";
 import { Field } from "./entities/field.entity";
 import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity";
 import { FieldSlot } from "./entities/field-slot.entity";
+import { SupabaseStorageService } from "../shared/services/supabase-storage.service";
 
 @Injectable()
 export class FieldsService {
@@ -37,6 +39,7 @@ export class FieldsService {
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
     private readonly fieldSlotSyncService: FieldSlotSyncService,
+    private readonly supabaseStorageService: SupabaseStorageService,
   ) {}
 
   async listAvailable() {
@@ -81,6 +84,77 @@ export class FieldsService {
     } catch (error) {
       this.logger.error(
         `Failed to create field for ownerId=${account.id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+
+      if (this.isUniqueConstraintViolation(error)) {
+        throw new ConflictException("Field name already exists for this venue");
+      }
+
+      throw error;
+    }
+  }
+
+  async createWithImage(
+    account: AuthenticatedAccount,
+    createFieldWithImageDto: CreateFieldWithImageDto,
+  ) {
+    this.ensureAdmin(account);
+
+    const normalizedField = this.normalizeCreateFieldInput(
+      createFieldWithImageDto,
+    );
+    await this.ensureVenueFieldPairIsAvailable(
+      account.id,
+      normalizedField.venueName,
+      normalizedField.fieldName,
+    );
+
+    // Validate image if provided
+    if (createFieldWithImageDto.image) {
+      this.validateFieldImage(createFieldWithImageDto.image);
+    }
+
+    const field = this.fieldsRepository.create({
+      ownerId: account.id,
+      venueName: normalizedField.venueName,
+      fieldName: normalizedField.fieldName,
+      playerCapacity: normalizedField.playerCapacity,
+      city: normalizedField.city,
+      address: normalizedField.address,
+      description: normalizedField.description,
+      isActive: true,
+    });
+
+    try {
+      const savedField = await this.fieldsRepository.save(field);
+
+      // Upload image to Supabase if provided
+      if (createFieldWithImageDto.image) {
+        try {
+          const imageUrl = await this.supabaseStorageService.uploadFieldImage(
+            createFieldWithImageDto.image,
+            savedField.id,
+          );
+
+          if (imageUrl) {
+            savedField.imageUrl = imageUrl;
+            await this.fieldsRepository.save(savedField);
+          }
+        } catch (imageError) {
+          this.logger.error(
+            `Failed to upload image for field ${savedField.id}`,
+            imageError instanceof Error ? imageError.stack : String(imageError),
+          );
+          // Don't fail the field creation if image upload fails
+          // The field is already created, user can retry uploading image later
+        }
+      }
+
+      return savedField;
+    } catch (error) {
+      this.logger.error(
+        `Failed to create field with image for ownerId=${account.id}`,
         error instanceof Error ? error.stack : String(error),
       );
 
@@ -686,6 +760,27 @@ export class FieldsService {
     }
 
     return trimmed;
+  }
+
+  private validateFieldImage(file: Express.Multer.File): void {
+    // Maximum file size: 5MB
+    const maxFileSizeBytes = 5 * 1024 * 1024;
+    if (file.size > maxFileSizeBytes) {
+      throw new BadRequestException("Image file size must not exceed 5MB");
+    }
+
+    // Allowed MIME types
+    const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new BadRequestException(
+        "Only JPEG, PNG, and WebP images are allowed",
+      );
+    }
+
+    // Validate file has a buffer
+    if (!file.buffer || file.buffer.length === 0) {
+      throw new BadRequestException("Image file is empty");
+    }
   }
 
   private normalizeCreateFieldSlotInput(
