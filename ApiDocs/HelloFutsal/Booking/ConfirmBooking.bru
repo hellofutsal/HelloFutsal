@@ -6,7 +6,7 @@ meta {
 
 patch {
   url: {{development}}/bookings/{{slotId}}/confirm
-  body: none
+  body: json
   auth: bearer
 }
 
@@ -16,4 +16,10 @@ auth:bearer {
 
 headers {
   Content-Type: application/json
+}
+
+body:json {
+  {
+    "extraAmount": 150
+  }
 }

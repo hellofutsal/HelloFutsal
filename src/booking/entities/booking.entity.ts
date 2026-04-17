@@ -52,6 +52,15 @@ export class Booking {
   @Column({ name: "status", type: "varchar", default: "booked" })
   status!: BookingStatus;
 
+  @Column({
+    name: "extra_amount",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  extraAmount!: string;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 

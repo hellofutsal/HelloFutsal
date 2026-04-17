@@ -11,6 +11,7 @@ import {
 import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
+import { ConfirmBookingDto } from "./dto/confirm-booking.dto";
 import { CreateBookingDto } from "./dto/create-booking.dto";
 import { BookingService } from "./booking.service";
 
@@ -32,8 +33,13 @@ export class BookingController {
   confirmBooking(
     @CurrentAccount() account: AuthenticatedAccount,
     @Param("slotId", new ParseUUIDPipe()) slotId: string,
+    @Body() confirmBookingDto: ConfirmBookingDto,
   ) {
-    return this.bookingService.confirmBooking(account, slotId);
+    return this.bookingService.confirmBooking(
+      account,
+      slotId,
+      confirmBookingDto,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

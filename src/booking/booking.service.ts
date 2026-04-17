@@ -13,6 +13,7 @@ import { Booking } from "./entities/booking.entity";
 import { Field } from "../fields/entities/field.entity";
 import { FieldSlot } from "../fields/entities/field-slot.entity";
 import { CreateBookingDto } from "./dto/create-booking.dto";
+import { ConfirmBookingDto } from "./dto/confirm-booking.dto";
 
 @Injectable()
 export class BookingService {
@@ -90,6 +91,7 @@ export class BookingService {
               slotId: slot.id,
               userId: user.id,
               status: "booked",
+              extraAmount: this.formatAmount(0),
             }),
           );
 
@@ -103,6 +105,9 @@ export class BookingService {
               slotId: booking.slotId,
               userId: booking.userId,
               status: booking.status,
+              baseAmount: this.formatAmount(slot.price),
+              extraAmount: this.formatAmount(booking.extraAmount),
+              totalAmount: this.sumAmounts(slot.price, booking.extraAmount),
             },
             slot: {
               id: slot.id,
@@ -111,6 +116,7 @@ export class BookingService {
               startTime: slot.startTime,
               endTime: slot.endTime,
               status: slot.status,
+              price: this.formatAmount(slot.price),
             },
             user: {
               id: user.id,
@@ -132,7 +138,11 @@ export class BookingService {
     }
   }
 
-  async confirmBooking(account: AuthenticatedAccount, slotId: string) {
+  async confirmBooking(
+    account: AuthenticatedAccount,
+    slotId: string,
+    confirmBookingDto: ConfirmBookingDto,
+  ) {
     this.ensureAdmin(account);
 
     return this.fieldSlotsRepository.manager.transaction(async (manager) => {
@@ -174,6 +184,9 @@ export class BookingService {
         throw new NotFoundException("Slot not found");
       }
 
+      booking.extraAmount = this.formatAmount(
+        confirmBookingDto.extraAmount ?? 0,
+      );
       booking.status = "completed";
       await bookingRepository.save(booking);
 
@@ -187,6 +200,9 @@ export class BookingService {
           slotId: booking.slotId,
           userId: booking.userId,
           status: booking.status,
+          baseAmount: this.formatAmount(slot.price),
+          extraAmount: this.formatAmount(booking.extraAmount),
+          totalAmount: this.sumAmounts(slot.price, booking.extraAmount),
         },
         slot: {
           id: slot.id,
@@ -195,6 +211,7 @@ export class BookingService {
           startTime: slot.startTime,
           endTime: slot.endTime,
           status: slot.status,
+          price: this.formatAmount(slot.price),
         },
         message: "Booking confirmed successfully",
       };
@@ -231,6 +248,9 @@ export class BookingService {
       booking: {
         id: booking.id,
         status: booking.status,
+        baseAmount: this.formatAmount(booking.slot.price),
+        extraAmount: this.formatAmount(booking.extraAmount),
+        totalAmount: this.sumAmounts(booking.slot.price, booking.extraAmount),
         createdAt: booking.createdAt,
         updatedAt: booking.updatedAt,
       },
@@ -250,6 +270,7 @@ export class BookingService {
         startTime: booking.slot.startTime,
         endTime: booking.slot.endTime,
         status: booking.slot.status,
+        price: this.formatAmount(booking.slot.price),
       },
     }));
   }
@@ -270,5 +291,26 @@ export class BookingService {
     };
 
     return driverError.driverError?.code === "23505";
+  }
+
+  private parseAmount(value: string | number | null | undefined): number {
+    if (value === null || value === undefined) {
+      return 0;
+    }
+
+    const parsed = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private formatAmount(value: string | number | null | undefined): string {
+    return this.parseAmount(value).toFixed(2);
+  }
+
+  private sumAmounts(
+    baseAmount: string | number | null | undefined,
+    extraAmount: string | number | null | undefined,
+  ): string {
+    const total = this.parseAmount(baseAmount) + this.parseAmount(extraAmount);
+    return total.toFixed(2);
   }
 }

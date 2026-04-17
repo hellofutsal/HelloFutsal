@@ -69,7 +69,10 @@ export class BookingRevenueService {
 
     const totalRevenueRaw = await baseQuery
       .clone()
-      .select("COALESCE(SUM(slot.price::numeric), 0)", "revenue")
+      .select(
+        "COALESCE(SUM(slot.price::numeric + booking.extra_amount::numeric), 0)",
+        "revenue",
+      )
       .getRawOne<{ revenue: string }>();
 
     let selectedPeriodRevenue = totalRevenueRaw?.revenue ?? "0";
@@ -81,7 +84,10 @@ export class BookingRevenueService {
           startDate: query.startDate,
           endDate: query.endDate,
         })
-        .select("COALESCE(SUM(slot.price::numeric), 0)", "revenue")
+        .select(
+          "COALESCE(SUM(slot.price::numeric + booking.extra_amount::numeric), 0)",
+          "revenue",
+        )
         .getRawOne<{ revenue: string }>();
 
       selectedPeriodRevenue = selectedRevenueRaw?.revenue ?? "0";
@@ -167,7 +173,11 @@ export class BookingRevenueService {
 
     const totalRevenue = bookings.reduce((sum, booking) => {
       const price = Number(booking.slot.price);
-      return sum + (Number.isNaN(price) ? 0 : price);
+      const extraAmount = Number(booking.extraAmount);
+      const safePrice = Number.isNaN(price) ? 0 : price;
+      const safeExtraAmount = Number.isNaN(extraAmount) ? 0 : extraAmount;
+
+      return sum + safePrice + safeExtraAmount;
     }, 0);
 
     const buffer = await this.createMonthlyBookingsPdfBuffer({
@@ -275,7 +285,9 @@ export class BookingRevenueService {
         { label: "Customer / Mobile", width: 132 },
         { label: "Date", width: 72 },
         { label: "Time", width: 84 },
-        { label: "Amount", width: 62 },
+        { label: "Base", width: 52 },
+        { label: "Extra", width: 52 },
+        { label: "Total", width: 52 },
         { label: "Status", width: 60 },
       ];
 
@@ -386,18 +398,33 @@ export class BookingRevenueService {
 
       if (details.bookings.length === 0) {
         ensureSpace();
-        drawRow(["-", "No bookings found", "-", "-", "-", "0.00", "-"]);
+        drawRow([
+          "-",
+          "No bookings found",
+          "-",
+          "-",
+          "-",
+          "0.00",
+          "0.00",
+          "0.00",
+          "-",
+        ]);
       } else {
         details.bookings.forEach((booking, index) => {
           ensureSpace();
           const price = Number(booking.slot.price);
+          const extraAmount = Number(booking.extraAmount);
+          const safePrice = Number.isNaN(price) ? 0 : price;
+          const safeExtraAmount = Number.isNaN(extraAmount) ? 0 : extraAmount;
           drawRow([
             String(index + 1),
             booking.id,
             `${booking.user.name ?? "Unknown"}\n${booking.user.mobileNumber ?? "Unknown"}`,
             booking.slot.slotDate,
             `${booking.slot.startTime} - ${booking.slot.endTime}`,
-            formatAmount(price),
+            formatAmount(safePrice),
+            formatAmount(safeExtraAmount),
+            formatAmount(safePrice + safeExtraAmount),
             booking.status,
           ]);
         });
@@ -408,6 +435,8 @@ export class BookingRevenueService {
         [
           "",
           "Total",
+          "",
+          "",
           "",
           "",
           "",
