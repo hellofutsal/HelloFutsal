@@ -44,14 +44,17 @@ export class BookingService {
         throw new NotFoundException("Slot not found");
       }
 
-      if (slot.status === "blocked") {
-        throw new ConflictException("Slot is already blocked");
+      // Only allow blocking if slot is available
+      if (slot.status !== "available") {
+        throw new ConflictException(
+          `Slot is not available for blocking (current status: ${slot.status})`,
+        );
       }
 
       slot.status = "blocked";
       await slotRepository.save(slot);
 
-      return {
+      const result = {
         slot: {
           id: slot.id,
           fieldId: slot.fieldId,
@@ -63,6 +66,7 @@ export class BookingService {
         },
         message: "Slot blocked successfully",
       };
+      return result;
     });
   }
 
