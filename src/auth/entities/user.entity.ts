@@ -29,6 +29,12 @@ export class UserAccount {
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 
+  @Column({ name: "onboarding_number", type: "int", default: 0 })
+  onboardingNumber!: number;
+
+  @Column({ name: "onboarding_complete", type: "boolean", default: false })
+  onboardingComplete!: boolean;
+
   @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;
 }
