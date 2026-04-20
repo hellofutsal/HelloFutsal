@@ -155,6 +155,11 @@ export class FieldsService {
       }),
     );
 
+    await this.groundOwnerAccountsRepository.update(
+      { id: account.id },
+      { onboardingNumber: 1, onboardingComplete: false },
+    );
+
     try {
       return await this.fieldsRepository.manager.transaction(
         async (manager) => {
