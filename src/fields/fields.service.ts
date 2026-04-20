@@ -141,6 +141,15 @@ export class FieldsService {
         `One or more venue/field pairs already exist: ${existingVenueFieldPairs.join(", ")}`,
       );
     }
+    const existingFieldCount = await this.fieldsRepository.count({
+      where: { ownerId: account.id },
+    });
+    if (existingFieldCount === 0) {
+      await this.groundOwnerAccountsRepository.update(
+        { id: account.id },
+        { onboardingNumber: 1, onboardingComplete: false },
+      );
+    }
 
     const fields = normalizedFields.map((normalizedField) =>
       this.fieldsRepository.create({
@@ -153,11 +162,6 @@ export class FieldsService {
         description: normalizedField.description,
         isActive: true,
       }),
-    );
-
-    await this.groundOwnerAccountsRepository.update(
-      { id: account.id },
-      { onboardingNumber: 1, onboardingComplete: false },
     );
 
     try {
