@@ -30,6 +30,12 @@ export class GroundOwnerAccount {
   @OneToMany(() => Field, (field) => field.owner)
   fields?: Field[];
 
+  @Column({ name: "onboarding_number", type: "int", default: 0 })
+  onboardingNumber!: number;
+
+  @Column({ name: "onboarding_complete", type: "boolean", default: false })
+  onboardingComplete!: boolean;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 

@@ -36,6 +36,10 @@ export class FieldsService {
     private readonly fieldRuleBooksRepository: Repository<FieldRuleBook>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
+    @InjectRepository(
+      require("../auth/entities/ground-owner.entity").GroundOwnerAccount,
+    )
+    private readonly groundOwnerAccountsRepository: Repository<any>,
     private readonly fieldSlotSyncService: FieldSlotSyncService,
   ) {}
 
@@ -75,6 +79,12 @@ export class FieldsService {
       description: normalizedField.description,
       isActive: true,
     });
+
+    // Set onboardingNumber = 1 and onboardingComplete = false
+    await this.groundOwnerAccountsRepository.update(
+      { id: account.id },
+      { onboardingNumber: 1, onboardingComplete: false },
+    );
 
     try {
       return await this.fieldsRepository.save(field);
@@ -319,6 +329,12 @@ export class FieldsService {
         "Schedule settings already exist for this field",
       );
     }
+
+    // Set onboardingNumber = 2 and onboardingComplete = true
+    await this.groundOwnerAccountsRepository.update(
+      { id: account.id },
+      { onboardingNumber: 2, onboardingComplete: true },
+    );
 
     const normalizedSettings = this.normalizeCreateFieldScheduleSettingsInput(
       createFieldScheduleSettingsDto,
