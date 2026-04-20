@@ -199,6 +199,8 @@ export class AuthService {
       mobileNumber: savedUser.mobileNumber,
       role: "user",
       name: savedUser.name,
+      onboardingNumber: savedUser.onboardingNumber,
+      onboardingComplete: savedUser.onboardingComplete,
     });
   }
 
@@ -245,6 +247,8 @@ export class AuthService {
       mobileNumber: user.mobileNumber,
       role: "user",
       name: user.name,
+      onboardingNumber: user.onboardingNumber,
+      onboardingComplete: user.onboardingComplete,
     });
   }
 
@@ -426,6 +430,8 @@ export class AuthService {
       mobileNumber: savedAdmin.mobileNumber,
       role: "admin",
       name: savedAdmin.ownerName,
+      onboardingNumber: savedAdmin.onboardingNumber,
+      onboardingComplete: savedAdmin.onboardingComplete,
     });
   }
 
@@ -461,6 +467,8 @@ export class AuthService {
       mobileNumber: admin.mobileNumber,
       role: "admin",
       name: admin.ownerName,
+      onboardingNumber: admin.onboardingNumber,
+      onboardingComplete: admin.onboardingComplete,
     });
   }
 
@@ -546,9 +554,17 @@ export class AuthService {
       role: account.role,
     });
 
+    // Extract onboarding fields if present
+    const onboardingNumber = (account as any).onboardingNumber ?? null;
+    const onboardingComplete = (account as any).onboardingComplete ?? null;
+
     return {
       accessToken,
-      account,
+      account: {
+        ...account,
+        onboardingNumber,
+        onboardingComplete,
+      },
     };
   }
 
