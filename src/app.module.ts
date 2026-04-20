@@ -16,6 +16,9 @@ import { FieldSlot } from "./fields/entities/field-slot.entity";
 import { FieldsModule } from "./fields/fields.module";
 import { KeepAliveModule } from "./keep-alive/keep-alive.module";
 import { AppController } from "./app.controller";
+import { BrevoEmailService } from "./email/brevo-email.service";
+import { NodemailerService } from "./email/nodemailer.service";
+import { EmailService } from "./email/email.service";
 
 function resolveSslConfig(configService: ConfigService, sslMode: string) {
   if (sslMode === "disable" || sslMode === "allow" || sslMode === "prefer") {
@@ -144,5 +147,6 @@ function getDatabaseConfig(configService: ConfigService) {
     KeepAliveModule,
   ],
   controllers: [AppController],
+  providers: [BrevoEmailService, NodemailerService, EmailService],
 })
 export class AppModule {}
