@@ -45,6 +45,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         mobileNumber: user.mobileNumber,
         role: "user",
         name: user.name,
+        onboardingNumber: user.onboardingNumber,
+        onboardingComplete: user.onboardingComplete,
       };
     }
 
@@ -62,6 +64,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       mobileNumber: admin.mobileNumber,
       role: "admin",
       name: admin.ownerName,
+      onboardingNumber: admin.onboardingNumber,
+      onboardingComplete: admin.onboardingComplete,
     };
   }
 }
