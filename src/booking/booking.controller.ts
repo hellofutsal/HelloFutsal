@@ -1,3 +1,4 @@
+// ...existing code...
 import {
   Body,
   Controller,
@@ -18,6 +19,15 @@ import { BookingService } from "./booking.service";
 @Controller("bookings")
 export class BookingController {
   constructor(private readonly bookingService: BookingService) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(":slotId/block")
+  blockSlot(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("slotId", new ParseUUIDPipe()) slotId: string,
+  ) {
+    return this.bookingService.blockSlot(account, slotId);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Post()
