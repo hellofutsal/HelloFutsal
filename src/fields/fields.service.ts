@@ -23,6 +23,7 @@ import { FieldRuleBook } from "./entities/field-rule-book.entity";
 import { Field } from "./entities/field.entity";
 import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity";
 import { FieldSlot } from "./entities/field-slot.entity";
+import { GroundOwnerAccount } from "../auth/entities/ground-owner.entity";
 
 @Injectable()
 export class FieldsService {
@@ -36,6 +37,8 @@ export class FieldsService {
     private readonly fieldRuleBooksRepository: Repository<FieldRuleBook>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
+    @InjectRepository(GroundOwnerAccount)
+    private readonly groundOwnerAccountsRepository: Repository<GroundOwnerAccount>,
     private readonly fieldSlotSyncService: FieldSlotSyncService,
   ) {}
 
@@ -75,6 +78,12 @@ export class FieldsService {
       description: normalizedField.description,
       isActive: true,
     });
+
+    // Set onboardingNumber = 1 and onboardingComplete = false
+    await this.groundOwnerAccountsRepository.update(
+      { id: account.id },
+      { onboardingNumber: 1, onboardingComplete: false },
+    );
 
     try {
       return await this.fieldsRepository.save(field);
@@ -319,6 +328,12 @@ export class FieldsService {
         "Schedule settings already exist for this field",
       );
     }
+
+    // Set onboardingNumber = 2 and onboardingComplete = true
+    await this.groundOwnerAccountsRepository.update(
+      { id: account.id },
+      { onboardingNumber: 2, onboardingComplete: true },
+    );
 
     const normalizedSettings = this.normalizeCreateFieldScheduleSettingsInput(
       createFieldScheduleSettingsDto,
