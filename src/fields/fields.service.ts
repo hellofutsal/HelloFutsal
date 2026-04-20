@@ -353,12 +353,6 @@ export class FieldsService {
       );
     }
 
-    // Set onboardingNumber = 2 and onboardingComplete = true
-    await this.groundOwnerAccountsRepository.update(
-      { id: account.id },
-      { onboardingNumber: 2, onboardingComplete: true },
-    );
-
     const normalizedSettings = this.normalizeCreateFieldScheduleSettingsInput(
       createFieldScheduleSettingsDto,
     );
@@ -381,6 +375,7 @@ export class FieldsService {
     const savedSettings = await this.fieldsRepository.manager.transaction(
       async (manager) => {
         const settingsRepository = manager.getRepository(FieldScheduleSettings);
+        const groundOwnerRepo = manager.getRepository(GroundOwnerAccount);
 
         const settings = settingsRepository.create({
           fieldId,
@@ -391,7 +386,15 @@ export class FieldsService {
           closingTime: normalizedSettings.closingTime,
         });
 
-        return settingsRepository.save(settings);
+        const saved = await settingsRepository.save(settings);
+
+        // Set onboardingNumber = 2 and onboardingComplete = true only after successful save
+        await groundOwnerRepo.update(
+          { id: account.id },
+          { onboardingNumber: 2, onboardingComplete: true },
+        );
+
+        return saved;
       },
     );
 
