@@ -79,14 +79,26 @@ export class FieldsService {
       isActive: true,
     });
 
-    // Set onboardingNumber = 1 and onboardingComplete = false
-    await this.groundOwnerAccountsRepository.update(
-      { id: account.id },
-      { onboardingNumber: 1, onboardingComplete: false },
-    );
-
     try {
-      return await this.fieldsRepository.save(field);
+      return await this.fieldsRepository.manager.transaction(
+        async (manager) => {
+          const repository = manager.getRepository(Field);
+          const groundOwnerRepo = manager.getRepository(GroundOwnerAccount);
+
+          // Only update onboarding if this is the first field
+          const existingFieldCount = await repository.count({
+            where: { ownerId: account.id },
+          });
+          if (existingFieldCount === 0) {
+            await groundOwnerRepo.update(
+              { id: account.id },
+              { onboardingNumber: 1, onboardingComplete: false },
+            );
+          }
+
+          return repository.save(field);
+        },
+      );
     } catch (error) {
       this.logger.error(
         `Failed to create field for ownerId=${account.id}`,
@@ -141,16 +153,7 @@ export class FieldsService {
         `One or more venue/field pairs already exist: ${existingVenueFieldPairs.join(", ")}`,
       );
     }
-    const existingFieldCount = await this.fieldsRepository.count({
-      where: { ownerId: account.id },
-    });
-    if (existingFieldCount === 0) {
-      await this.groundOwnerAccountsRepository.update(
-        { id: account.id },
-        { onboardingNumber: 1, onboardingComplete: false },
-      );
-    }
-
+    // Move onboarding state update and field creation into the same transaction
     const fields = normalizedFields.map((normalizedField) =>
       this.fieldsRepository.create({
         ownerId: account.id,
@@ -168,6 +171,18 @@ export class FieldsService {
       return await this.fieldsRepository.manager.transaction(
         async (manager) => {
           const repository = manager.getRepository(Field);
+          const groundOwnerRepo = manager.getRepository(GroundOwnerAccount);
+
+          const existingFieldCount = await repository.count({
+            where: { ownerId: account.id },
+          });
+          if (existingFieldCount === 0) {
+            await groundOwnerRepo.update(
+              { id: account.id },
+              { onboardingNumber: 1, onboardingComplete: false },
+            );
+          }
+
           return repository.save(fields);
         },
       );
