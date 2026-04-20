@@ -79,14 +79,26 @@ export class FieldsService {
       isActive: true,
     });
 
-    // Set onboardingNumber = 1 and onboardingComplete = false
-    await this.groundOwnerAccountsRepository.update(
-      { id: account.id },
-      { onboardingNumber: 1, onboardingComplete: false },
-    );
-
     try {
-      return await this.fieldsRepository.save(field);
+      return await this.fieldsRepository.manager.transaction(
+        async (manager) => {
+          const repository = manager.getRepository(Field);
+          const groundOwnerRepo = manager.getRepository(GroundOwnerAccount);
+
+          // Only update onboarding if this is the first field
+          const existingFieldCount = await repository.count({
+            where: { ownerId: account.id },
+          });
+          if (existingFieldCount === 0) {
+            await groundOwnerRepo.update(
+              { id: account.id },
+              { onboardingNumber: 1, onboardingComplete: false },
+            );
+          }
+
+          return repository.save(field);
+        },
+      );
     } catch (error) {
       this.logger.error(
         `Failed to create field for ownerId=${account.id}`,
@@ -141,7 +153,7 @@ export class FieldsService {
         `One or more venue/field pairs already exist: ${existingVenueFieldPairs.join(", ")}`,
       );
     }
-
+    // Move onboarding state update and field creation into the same transaction
     const fields = normalizedFields.map((normalizedField) =>
       this.fieldsRepository.create({
         ownerId: account.id,
@@ -155,15 +167,22 @@ export class FieldsService {
       }),
     );
 
-    await this.groundOwnerAccountsRepository.update(
-      { id: account.id },
-      { onboardingNumber: 1, onboardingComplete: false },
-    );
-
     try {
       return await this.fieldsRepository.manager.transaction(
         async (manager) => {
           const repository = manager.getRepository(Field);
+          const groundOwnerRepo = manager.getRepository(GroundOwnerAccount);
+
+          const existingFieldCount = await repository.count({
+            where: { ownerId: account.id },
+          });
+          if (existingFieldCount === 0) {
+            await groundOwnerRepo.update(
+              { id: account.id },
+              { onboardingNumber: 1, onboardingComplete: false },
+            );
+          }
+
           return repository.save(fields);
         },
       );
@@ -334,12 +353,6 @@ export class FieldsService {
       );
     }
 
-    // Set onboardingNumber = 2 and onboardingComplete = true
-    await this.groundOwnerAccountsRepository.update(
-      { id: account.id },
-      { onboardingNumber: 2, onboardingComplete: true },
-    );
-
     const normalizedSettings = this.normalizeCreateFieldScheduleSettingsInput(
       createFieldScheduleSettingsDto,
     );
@@ -362,6 +375,7 @@ export class FieldsService {
     const savedSettings = await this.fieldsRepository.manager.transaction(
       async (manager) => {
         const settingsRepository = manager.getRepository(FieldScheduleSettings);
+        const groundOwnerRepo = manager.getRepository(GroundOwnerAccount);
 
         const settings = settingsRepository.create({
           fieldId,
@@ -372,7 +386,15 @@ export class FieldsService {
           closingTime: normalizedSettings.closingTime,
         });
 
-        return settingsRepository.save(settings);
+        const saved = await settingsRepository.save(settings);
+
+        // Set onboardingNumber = 2 and onboardingComplete = true only after successful save
+        await groundOwnerRepo.update(
+          { id: account.id },
+          { onboardingNumber: 2, onboardingComplete: true },
+        );
+
+        return saved;
       },
     );
 
