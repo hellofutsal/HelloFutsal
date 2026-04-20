@@ -23,6 +23,7 @@ import { FieldRuleBook } from "./entities/field-rule-book.entity";
 import { Field } from "./entities/field.entity";
 import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity";
 import { FieldSlot } from "./entities/field-slot.entity";
+import { GroundOwnerAccount } from "../auth/entities/ground-owner.entity";
 
 @Injectable()
 export class FieldsService {
@@ -36,10 +37,8 @@ export class FieldsService {
     private readonly fieldRuleBooksRepository: Repository<FieldRuleBook>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
-    @InjectRepository(
-      require("../auth/entities/ground-owner.entity").GroundOwnerAccount,
-    )
-    private readonly groundOwnerAccountsRepository: Repository<any>,
+    @InjectRepository(GroundOwnerAccount)
+    private readonly groundOwnerAccountsRepository: Repository<GroundOwnerAccount>,
     private readonly fieldSlotSyncService: FieldSlotSyncService,
   ) {}
 
