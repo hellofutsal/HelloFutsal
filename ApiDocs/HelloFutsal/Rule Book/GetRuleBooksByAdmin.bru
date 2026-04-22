@@ -1,0 +1,15 @@
+meta {
+  name: GetRuleBooksByAdmin
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{development}}/fields/rule-books/by-admin
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
