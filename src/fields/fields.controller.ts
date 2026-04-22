@@ -110,6 +110,26 @@ export class FieldsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get("rule-books/:ruleBookId")
+  async getRuleBookById(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("ruleBookId", new ParseUUIDPipe()) ruleBookId: string,
+  ) {
+    return this.fieldsService.getRuleBookById(ruleBookId, account);
+  }
+  @UseGuards(JwtAuthGuard)
+  @Get("schedule-settings/:scheduleSettingId")
+  async getScheduleSettingById(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("scheduleSettingId", new ParseUUIDPipe()) scheduleSettingId: string,
+  ) {
+    return this.fieldsService.getScheduleSettingById(
+      scheduleSettingId,
+      account,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get("schedule-settings")
   getScheduleSettingByUserId(@CurrentAccount() account: AuthenticatedAccount) {
     return this.fieldsService.getScheduleSettingByUserId(account);
