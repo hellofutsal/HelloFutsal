@@ -154,6 +154,23 @@ export class FieldsController {
     );
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get("rule-books/by-admin")
+  getRuleBooksByAdmin(@CurrentAccount() account: AuthenticatedAccount) {
+    return this.fieldsService.getRuleBooksByAdmin(account);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("rule-books/by-user")
+  getRuleBooksByUser(@CurrentAccount() account: AuthenticatedAccount) {
+    return this.fieldsService.getRuleBooksByUser(account);
+  }
+
+  @Get("rule-books/by-field/:fieldId")
+  getRuleBooksByField(@Param("fieldId", new ParseUUIDPipe()) fieldId: string) {
+    return this.fieldsService.getRuleBooksByField(fieldId);
+  }
+
   private validateDto(value: unknown, label: string): CreateFieldDto {
     const dto = plainToInstance(CreateFieldDto, value);
     const errors = validateSync(dto, {

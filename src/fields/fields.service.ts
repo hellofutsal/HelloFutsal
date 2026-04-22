@@ -676,6 +676,33 @@ export class FieldsService {
       };
     }
   }
+  async getRuleBooksByAdmin(account: AuthenticatedAccount) {
+    this.ensureAdmin(account);
+    // Get all rule books for all fields owned by this admin
+    return this.fieldRuleBooksRepository
+      .createQueryBuilder("rule")
+      .leftJoinAndSelect("rule.field", "field")
+      .where("field.owner_id = :ownerId", { ownerId: account.id })
+      .orderBy("rule.created_at", "DESC")
+      .getMany();
+  }
+
+  async getRuleBooksByUser(account: AuthenticatedAccount) {
+    // Return rule books for all fields owned by this user (admin or user)
+    return this.fieldRuleBooksRepository
+      .createQueryBuilder("rule")
+      .leftJoinAndSelect("rule.field", "field")
+      .where("field.owner_id = :ownerId", { ownerId: account.id })
+      .orderBy("rule.created_at", "DESC")
+      .getMany();
+  }
+
+  async getRuleBooksByField(fieldId: string) {
+    return this.fieldRuleBooksRepository.find({
+      where: { fieldId },
+      order: { createdAt: "DESC" },
+    });
+  }
 
   private normalizeCreateFieldInput(createFieldDto: CreateFieldDto): {
     venueName: string;
