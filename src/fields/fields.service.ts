@@ -435,7 +435,7 @@ export class FieldsService {
       .createQueryBuilder("setting")
       .leftJoinAndSelect("setting.field", "field")
       .leftJoinAndSelect("field.scheduleSettings", "scheduleSettings") // optional if needed
-      .where("field.ownerId = :ownerId", { ownerId: account.id })
+      .where("field.owner_id = :ownerId", { ownerId: account.id })
       .getMany();
   }
 

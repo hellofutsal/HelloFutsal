@@ -4,8 +4,13 @@ meta {
   seq: 3
 }
 
+
 get {
-  url: 
+  url: {{development}}/fields/schedule-settings/by-admin
   body: none
-  auth: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
 }
