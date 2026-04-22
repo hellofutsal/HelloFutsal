@@ -9,6 +9,7 @@ import { Repository } from "typeorm";
 import PDFDocument from "pdfkit";
 import { AuthenticatedAccount } from "../../auth/types/authenticated-account.type";
 import { Field } from "../../fields/entities/field.entity";
+import { FieldSlot } from "../../fields/entities/field-slot.entity";
 import { Booking } from "../entities/booking.entity";
 import { GetFieldBookingRevenueQueryDto } from "./dto/get-field-booking-revenue-query.dto";
 
@@ -22,6 +23,8 @@ export class BookingRevenueService {
     private readonly bookingsRepository: Repository<Booking>,
     @InjectRepository(Field)
     private readonly fieldsRepository: Repository<Field>,
+    @InjectRepository(FieldSlot)
+    private readonly fieldSlotsRepository: Repository<FieldSlot>,
   ) {}
 
   async getFieldRevenue(
@@ -93,6 +96,50 @@ export class BookingRevenueService {
       selectedPeriodRevenue = selectedRevenueRaw?.revenue ?? "0";
     }
 
+    // ── Slot stats for the selected date range ──────────────────────────────
+    const slotStatsQuery = this.fieldSlotsRepository
+      .createQueryBuilder("slot")
+      .select("slot.status", "status")
+      .addSelect("COUNT(*)", "count")
+      .where("slot.field_id = :fieldId", { fieldId });
+
+    if (query.startDate && query.endDate) {
+      slotStatsQuery.andWhere(
+        "slot.slot_date BETWEEN :startDate AND :endDate",
+        { startDate: query.startDate, endDate: query.endDate },
+      );
+    }
+
+    const slotStatRows = await slotStatsQuery
+      .groupBy("slot.status")
+      .getRawMany<{ status: string; count: string }>();
+
+    const slotStatMap = Object.fromEntries(
+      slotStatRows.map((row) => [row.status, Number(row.count)]),
+    );
+
+    const totalSlots = slotStatRows.reduce(
+      (sum, row) => sum + Number(row.count),
+      0,
+    );
+    const bookedSlots = (slotStatMap["booked"] ?? 0) + (slotStatMap["completed"] ?? 0);
+
+    const bookingPercentage =
+      totalSlots > 0
+        ? Math.round((bookedSlots / totalSlots) * 100 * 100) / 100
+        : 0;
+
+    const slotStats = {
+      totalSlots,
+      bookedSlots,
+      bookingPercentage,
+      availableSlots: slotStatMap["available"] ?? 0,
+      completedSlots: slotStatMap["completed"] ?? 0,
+      blockedSlots: slotStatMap["blocked"] ?? 0,
+      cancelledSlots: slotStatMap["cancelled"] ?? 0,
+    };
+    // ─────────────────────────────────────────────────────────────────────────
+
     return {
       fieldId,
       totalRevenueTillNow: totalRevenueRaw?.revenue ?? "0",
@@ -104,6 +151,7 @@ export class BookingRevenueService {
               endDate: query.endDate,
             }
           : null,
+      slotStats,
     };
   }
 
