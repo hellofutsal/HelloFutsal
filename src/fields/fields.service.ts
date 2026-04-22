@@ -335,6 +335,51 @@ export class FieldsService {
     }));
   }
 
+  async getRuleBookById(ruleBookId: string, account: AuthenticatedAccount) {
+    const ruleBook = await this.fieldRuleBooksRepository.findOne({
+      where: { id: ruleBookId },
+    });
+    if (!ruleBook) {
+      throw new NotFoundException("Rule book not found");
+    }
+    const field = await this.fieldsRepository.findOne({
+      where: { id: ruleBook.fieldId },
+    });
+    if (!field) {
+      throw new NotFoundException("Field not found for this rule book");
+    }
+    if (field.ownerId !== account.id) {
+      throw new ForbiddenException("You do not have access to this rule book");
+    }
+    return ruleBook;
+  }
+
+  async getScheduleSettingById(
+    scheduleSettingId: string,
+    account: AuthenticatedAccount,
+  ) {
+    const scheduleSetting = await this.fieldSettingRepository.findOne({
+      where: { id: scheduleSettingId },
+    });
+    if (!scheduleSetting) {
+      throw new NotFoundException("Schedule setting not found");
+    }
+    // Fetch the field and check ownership
+    const field = await this.fieldsRepository.findOne({
+      where: { id: scheduleSetting.fieldId },
+    });
+    console.log("Fetched field for schedule setting:", field);
+    if (!field) {
+      throw new NotFoundException("Field not found for this schedule setting");
+    }
+    if (field.ownerId !== account.id) {
+      throw new ForbiddenException(
+        "You do not have access to this schedule setting",
+      );
+    }
+    return scheduleSetting;
+  }
+
   async createScheduleSettings(
     account: AuthenticatedAccount,
     fieldId: string,

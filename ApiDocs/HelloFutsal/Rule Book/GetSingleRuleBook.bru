@@ -1,0 +1,15 @@
+meta {
+  name: GetSingleRuleBook
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{development}}/fields/rule-books/{{ruleBookId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
