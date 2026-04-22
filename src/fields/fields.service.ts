@@ -37,6 +37,10 @@ export class FieldsService {
     private readonly fieldRuleBooksRepository: Repository<FieldRuleBook>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
+
+    @InjectRepository(FieldScheduleSettings)
+    private readonly fieldSettingRepository: Repository<FieldScheduleSettings>,
+
     @InjectRepository(GroundOwnerAccount)
     private readonly groundOwnerAccountsRepository: Repository<GroundOwnerAccount>,
     private readonly fieldSlotSyncService: FieldSlotSyncService,
@@ -422,6 +426,17 @@ export class FieldsService {
       scheduleSettings: savedSettings,
       slots: syncedSlots,
     };
+  }
+
+  async getScheduleSettingByUserId(account: AuthenticatedAccount) {
+    this.ensureAdmin(account);
+
+    return await this.fieldSettingRepository
+      .createQueryBuilder("setting")
+      .leftJoinAndSelect("setting.field", "field")
+      .leftJoinAndSelect("field.scheduleSettings", "scheduleSettings") // optional if needed
+      .where("field.owner_id = :ownerId", { ownerId: account.id })
+      .getMany();
   }
 
   async updateScheduleSettings(

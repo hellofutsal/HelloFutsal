@@ -1,0 +1,16 @@
+meta {
+  name: GetSlotByAdmin
+  type: http
+  seq: 3
+}
+
+
+get {
+  url: {{development}}/fields/schedule-settings/by-admin
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

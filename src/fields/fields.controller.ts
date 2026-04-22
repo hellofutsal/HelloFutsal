@@ -110,6 +110,12 @@ export class FieldsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get("schedule-settings")
+  getScheduleSettingByUserId(@CurrentAccount() account: AuthenticatedAccount) {
+    return this.fieldsService.getScheduleSettingByUserId(account);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Patch(":fieldId/schedule-settings")
   updateScheduleSettings(
     @CurrentAccount() account: AuthenticatedAccount,
