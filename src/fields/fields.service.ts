@@ -688,8 +688,13 @@ export class FieldsService {
   }
 
   async getRuleBooksByUser(account: AuthenticatedAccount) {
-    // For this project, user and admin are both owners, so same as admin
-    return this.getRuleBooksByAdmin(account);
+    // Return rule books for all fields owned by this user (admin or user)
+    return this.fieldRuleBooksRepository
+      .createQueryBuilder("rule")
+      .leftJoinAndSelect("rule.field", "field")
+      .where("field.owner_id = :ownerId", { ownerId: account.id })
+      .orderBy("rule.created_at", "DESC")
+      .getMany();
   }
 
   async getRuleBooksByField(fieldId: string) {
