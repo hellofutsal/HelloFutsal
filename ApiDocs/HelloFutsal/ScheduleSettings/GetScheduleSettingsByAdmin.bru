@@ -1,0 +1,15 @@
+meta {
+  name: GetScheduleSettingsByAdmin
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{development}}/fields/schedule-settings/by-admin
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
