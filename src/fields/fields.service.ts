@@ -336,20 +336,16 @@ export class FieldsService {
   }
 
   async getRuleBookById(ruleBookId: string, account: AuthenticatedAccount) {
+    // Enforce ownership in the lookup
     const ruleBook = await this.fieldRuleBooksRepository.findOne({
-      where: { id: ruleBookId },
+      where: {
+        id: ruleBookId,
+        field: { ownerId: account.id },
+      },
+      relations: { field: true },
     });
     if (!ruleBook) {
       throw new NotFoundException("Rule book not found");
-    }
-    const field = await this.fieldsRepository.findOne({
-      where: { id: ruleBook.fieldId },
-    });
-    if (!field) {
-      throw new NotFoundException("Field not found for this rule book");
-    }
-    if (field.ownerId !== account.id) {
-      throw new ForbiddenException("You do not have access to this rule book");
     }
     return ruleBook;
   }
@@ -368,7 +364,6 @@ export class FieldsService {
     const field = await this.fieldsRepository.findOne({
       where: { id: scheduleSetting.fieldId },
     });
-    console.log("Fetched field for schedule setting:", field);
     if (!field) {
       throw new NotFoundException("Field not found for this schedule setting");
     }
