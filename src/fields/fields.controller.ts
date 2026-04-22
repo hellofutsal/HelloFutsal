@@ -118,6 +118,14 @@ export class FieldsController {
     return this.fieldsService.getRuleBookById(ruleBookId, account);
   }
   @UseGuards(JwtAuthGuard)
+  @Get("schedule-settings/by-admin")
+  getAllScheduleSettingsByAdmin(
+    @CurrentAccount() account: AuthenticatedAccount,
+  ) {
+    return this.fieldsService.getAllScheduleSettingsByAdmin(account);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get("schedule-settings/:scheduleSettingId")
   async getScheduleSettingById(
     @CurrentAccount() account: AuthenticatedAccount,

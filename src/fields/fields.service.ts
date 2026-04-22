@@ -479,6 +479,34 @@ export class FieldsService {
       .getMany();
   }
 
+  async getAllScheduleSettingsByAdmin(account: AuthenticatedAccount) {
+    this.ensureAdmin(account);
+
+    const [settings, total] = await this.fieldSettingRepository
+      .createQueryBuilder("setting")
+      .leftJoinAndSelect("setting.field", "field")
+      .where("field.owner_id = :ownerId", { ownerId: account.id })
+      .orderBy("setting.created_at", "DESC")
+      .getManyAndCount();
+
+    return {
+      total,
+      scheduleSettings: settings.map((s) => ({
+        id: s.id,
+        fieldId: s.fieldId,
+        fieldName: s.field?.fieldName ?? null,
+        venueName: s.field?.venueName ?? null,
+        slotDurationMin: s.slotDurationMin,
+        breakBetweenMin: s.breakBetweenMin,
+        basePrice: s.basePrice,
+        openingTime: s.openingTime,
+        closingTime: s.closingTime,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+      })),
+    };
+  }
+
   async updateScheduleSettings(
     account: AuthenticatedAccount,
     fieldId: string,
