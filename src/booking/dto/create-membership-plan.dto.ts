@@ -1,24 +1,44 @@
 import {
   IsUUID,
-  IsInt,
   IsString,
   IsBoolean,
-  Min,
-  Max,
   Matches,
+  IsArray,
+  ArrayNotEmpty,
+  ArrayMinSize,
+  IsIn,
+  IsOptional,
 } from "class-validator";
 
 export class CreateMembershipPlanDto {
+  @IsString()
+  userName!: string;
+
+  @IsString()
+  phoneNumber!: string;
+  @IsOptional()
   @IsUUID()
-  userId!: string;
+  userId?: string;
 
   @IsUUID()
   fieldId!: string;
 
-  @IsInt()
-  @Min(0)
-  @Max(6)
-  dayOfWeek!: number; // 0=Sunday, 6=Saturday
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMinSize(1)
+  @IsIn(
+    [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+    ],
+    { each: true },
+  )
+  daysOfWeek!: string[]; // e.g., ["sunday", "friday"]
 
   @IsString()
   @Matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, {
@@ -32,6 +52,7 @@ export class CreateMembershipPlanDto {
   })
   endTime!: string;
 
+  @IsOptional()
   @IsBoolean()
-  active!: boolean;
+  active?: boolean;
 }

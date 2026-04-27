@@ -25,23 +25,38 @@ export class MembershipPlanController {
 
   @Post()
   async createMembershipPlan(@Body() dto: CreateMembershipPlanDto) {
-    const user = await this.userRepo.findOneByOrFail({ id: dto.userId });
+    // Find or create user by phone number
+    let user = await this.userRepo.findOne({
+      where: { mobileNumber: dto.phoneNumber },
+    });
+    if (!user) {
+      user = this.userRepo.create({
+        name: dto.userName,
+        mobileNumber: dto.phoneNumber,
+        passwordHash: null,
+      });
+      user = await this.userRepo.save(user);
+    } else if (!user.name) {
+      user.name = dto.userName;
+      user = await this.userRepo.save(user);
+    }
     const field = await this.fieldRepo.findOneByOrFail({ id: dto.fieldId });
     const plan = this.membershipPlanRepo.create({
       user,
       field,
-      dayOfWeek: dto.dayOfWeek,
+      daysOfWeek: dto.daysOfWeek,
       startTime: dto.startTime,
       endTime: dto.endTime,
       active: dto.active,
+      userName: dto.userName,
+      phoneNumber: dto.phoneNumber,
     });
     await this.membershipPlanRepo.save(plan);
 
-    // Sync with existing slots: find all future slots for this field, day, and time
+    // Sync with existing slots: find all future slots for this field, time, and available, for all selected days
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
-    // Find all slots for this field, matching day of week, time, and available
-    const slots = await this.fieldSlotRepo
+    const allSlots = await this.fieldSlotRepo
       .createQueryBuilder("slot")
       .where("slot.field_id = :fieldId", { fieldId: field.id })
       .andWhere("slot.start_time = :startTime", { startTime: dto.startTime })
@@ -50,10 +65,21 @@ export class MembershipPlanController {
       .andWhere("slot.slot_date >= :today", { today: todayStr })
       .getMany();
 
-    for (const slot of slots) {
-      // Check if slot's date matches the plan's dayOfWeek
+    // Helper to map JS getDay() to string
+    const dayNames = [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+    ];
+    let syncedCount = 0;
+    for (const slot of allSlots) {
       const slotDate = new Date(slot.slotDate);
-      if (slotDate.getDay() !== dto.dayOfWeek) continue;
+      const slotDayName = dayNames[slotDate.getDay()];
+      if (!dto.daysOfWeek.includes(slotDayName)) continue;
       // Mark slot as booked and membership
       slot.status = "booked";
       slot.slotType = "membership";
@@ -69,8 +95,9 @@ export class MembershipPlanController {
           bookingType: "membership",
         }),
       );
+      syncedCount++;
     }
 
-    return { success: true, plan, syncedSlots: slots.length };
+    return { success: true, plan, syncedSlots: syncedCount };
   }
 }

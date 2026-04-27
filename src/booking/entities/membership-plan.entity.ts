@@ -12,6 +12,11 @@ import { Field } from "../../fields/entities/field.entity";
 
 @Entity({ name: "membership_plans" })
 export class MembershipPlan {
+  @Column({ name: "user_name", type: "varchar", length: 120 })
+  userName!: string;
+
+  @Column({ name: "phone_number", type: "varchar", length: 20 })
+  phoneNumber!: string;
   @PrimaryGeneratedColumn("uuid")
   id!: string;
 
@@ -23,8 +28,8 @@ export class MembershipPlan {
   @JoinColumn({ name: "field_id" })
   field!: Field;
 
-  @Column({ name: "day_of_week", type: "int" })
-  dayOfWeek!: number; // 0=Sunday, 6=Saturday
+  @Column({ name: "days_of_week", type: "simple-array" })
+  daysOfWeek!: string[]; // e.g., ["sunday", "friday"]
 
   @Column({ name: "start_time", type: "time" })
   startTime!: string;

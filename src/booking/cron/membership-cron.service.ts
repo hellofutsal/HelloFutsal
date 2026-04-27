@@ -24,6 +24,16 @@ export class MembershipCronService {
   async blockUpcomingMembershipSlots() {
     const today = new Date();
     const dayOfWeek = today.getDay();
+    const dayNames = [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+    ];
+    const todayDayName = dayNames[dayOfWeek];
     const nextWeek = new Date(today);
     nextWeek.setDate(today.getDate() + 7);
 
@@ -31,7 +41,12 @@ export class MembershipCronService {
       where: { active: true },
     });
     for (const plan of plans) {
-      if (plan.dayOfWeek !== dayOfWeek) continue;
+      if (
+        !plan.daysOfWeek ||
+        !Array.isArray(plan.daysOfWeek) ||
+        !plan.daysOfWeek.includes(todayDayName)
+      )
+        continue;
       // Find slot for next week
       const slot = await this.fieldSlotRepo.findOne({
         where: {
