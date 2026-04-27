@@ -9,9 +9,17 @@ export class ChangeDayOfWeekToDaysOfWeek1775734400000 implements MigrationInterf
       ALTER TABLE "membership_plans"
       ADD COLUMN "days_of_week" text DEFAULT '';
     `);
-    // 2. Copy data from day_of_week to days_of_week as a string (e.g., '5' -> '5')
+    // 2. Map day_of_week ints to weekday names for days_of_week
     await queryRunner.query(`
-      UPDATE "membership_plans" SET "days_of_week" = CASE WHEN "day_of_week" IS NOT NULL THEN "day_of_week"::text ELSE '' END;
+      UPDATE "membership_plans" SET "days_of_week" = CASE 
+        WHEN "day_of_week" = 0 THEN 'sunday'
+        WHEN "day_of_week" = 1 THEN 'monday'
+        WHEN "day_of_week" = 2 THEN 'tuesday'
+        WHEN "day_of_week" = 3 THEN 'wednesday'
+        WHEN "day_of_week" = 4 THEN 'thursday'
+        WHEN "day_of_week" = 5 THEN 'friday'
+        WHEN "day_of_week" = 6 THEN 'saturday'
+        ELSE '' END;
     `);
     // 3. Set NOT NULL
     await queryRunner.query(`
@@ -31,13 +39,8 @@ export class ChangeDayOfWeekToDaysOfWeek1775734400000 implements MigrationInterf
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`
-      ALTER TABLE "membership_plans"
-      DROP COLUMN "days_of_week";
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "membership_plans"
-      ADD COLUMN "day_of_week" int;
-    `);
+    throw new Error(
+      "Irreversible migration: cannot safely restore day_of_week from days_of_week.",
+    );
   }
 }

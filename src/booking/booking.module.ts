@@ -21,7 +21,7 @@ import { Field } from "../fields/entities/field.entity";
     ]),
     BookingRevenueModule,
   ],
-  controllers: [BookingController],
+  controllers: [BookingController, MembershipPlanController],
   providers: [BookingService],
 })
 export class BookingModule {}
