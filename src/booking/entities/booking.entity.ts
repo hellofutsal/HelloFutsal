@@ -18,6 +18,8 @@ export type BookingStatus = "booked" | "completed" | "cancelled";
 @Index(["fieldId"])
 @Index(["slotId"], { unique: true })
 @Index(["userId"])
+export type BookingType = "normal" | "membership";
+
 export class Booking {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
@@ -51,6 +53,9 @@ export class Booking {
 
   @Column({ name: "status", type: "varchar", default: "booked" })
   status!: BookingStatus;
+
+  @Column({ name: "booking_type", type: "varchar", default: "normal" })
+  bookingType!: BookingType;
 
   @Column({
     name: "extra_amount",

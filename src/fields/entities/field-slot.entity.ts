@@ -17,6 +17,8 @@ export type FieldSlotStatus =
   | "blocked"
   | "cancelled";
 
+export type SlotType = "normal" | "membership";
+
 @Entity({ name: "field_slots" })
 @Index(["fieldId", "slotDate", "startTime"], { unique: true })
 export class FieldSlot {
@@ -40,6 +42,9 @@ export class FieldSlot {
 
   @Column({ name: "end_time", type: "time" })
   endTime!: string;
+
+  @Column({ name: "slot_type", type: "varchar", default: "normal" })
+  slotType!: SlotType;
 
   @Column({ name: "price", type: "numeric", precision: 12, scale: 2 })
   price!: string;
