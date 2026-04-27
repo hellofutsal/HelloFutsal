@@ -13,13 +13,12 @@ import { Field } from "../../fields/entities/field.entity";
 import { FieldSlot } from "../../fields/entities/field-slot.entity";
 
 export type BookingStatus = "booked" | "completed" | "cancelled";
+export type BookingType = "normal" | "membership";
 
 @Entity({ name: "bookings" })
 @Index(["fieldId"])
 @Index(["slotId"], { unique: true })
 @Index(["userId"])
-export type BookingType = "normal" | "membership";
-
 export class Booking {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
