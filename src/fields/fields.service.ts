@@ -37,6 +37,10 @@ export class FieldsService {
     private readonly fieldRuleBooksRepository: Repository<FieldRuleBook>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
+
+    @InjectRepository(FieldScheduleSettings)
+    private readonly fieldSettingRepository: Repository<FieldScheduleSettings>,
+
     @InjectRepository(GroundOwnerAccount)
     private readonly groundOwnerAccountsRepository: Repository<GroundOwnerAccount>,
     private readonly fieldSlotSyncService: FieldSlotSyncService,
@@ -331,6 +335,46 @@ export class FieldsService {
     }));
   }
 
+  async getRuleBookById(ruleBookId: string, account: AuthenticatedAccount) {
+    // Enforce ownership in the lookup
+    const ruleBook = await this.fieldRuleBooksRepository.findOne({
+      where: {
+        id: ruleBookId,
+        field: { ownerId: account.id },
+      },
+      relations: { field: true },
+    });
+    if (!ruleBook) {
+      throw new NotFoundException("Rule book not found");
+    }
+    return ruleBook;
+  }
+
+  async getScheduleSettingById(
+    scheduleSettingId: string,
+    account: AuthenticatedAccount,
+  ) {
+    const scheduleSetting = await this.fieldSettingRepository.findOne({
+      where: { id: scheduleSettingId },
+    });
+    if (!scheduleSetting) {
+      throw new NotFoundException("Schedule setting not found");
+    }
+    // Fetch the field and check ownership
+    const field = await this.fieldsRepository.findOne({
+      where: { id: scheduleSetting.fieldId },
+    });
+    if (!field) {
+      throw new NotFoundException("Field not found for this schedule setting");
+    }
+    if (field.ownerId !== account.id) {
+      throw new ForbiddenException(
+        "You do not have access to this schedule setting",
+      );
+    }
+    return scheduleSetting;
+  }
+
   async createScheduleSettings(
     account: AuthenticatedAccount,
     fieldId: string,
@@ -421,6 +465,45 @@ export class FieldsService {
     return {
       scheduleSettings: savedSettings,
       slots: syncedSlots,
+    };
+  }
+
+  async getScheduleSettingByUserId(account: AuthenticatedAccount) {
+    this.ensureAdmin(account);
+
+    return await this.fieldSettingRepository
+      .createQueryBuilder("setting")
+      .leftJoinAndSelect("setting.field", "field")
+      .leftJoinAndSelect("field.scheduleSettings", "scheduleSettings") // optional if needed
+      .where("field.owner_id = :ownerId", { ownerId: account.id })
+      .getMany();
+  }
+
+  async getAllScheduleSettingsByAdmin(account: AuthenticatedAccount) {
+    this.ensureAdmin(account);
+
+    const [settings, total] = await this.fieldSettingRepository
+      .createQueryBuilder("setting")
+      .leftJoinAndSelect("setting.field", "field")
+      .where("field.owner_id = :ownerId", { ownerId: account.id })
+      .orderBy("setting.created_at", "DESC")
+      .getManyAndCount();
+
+    return {
+      total,
+      scheduleSettings: settings.map((s) => ({
+        id: s.id,
+        fieldId: s.fieldId,
+        fieldName: s.field?.fieldName ?? null,
+        venueName: s.field?.venueName ?? null,
+        slotDurationMin: s.slotDurationMin,
+        breakBetweenMin: s.breakBetweenMin,
+        basePrice: s.basePrice,
+        openingTime: s.openingTime,
+        closingTime: s.closingTime,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+      })),
     };
   }
 
@@ -660,6 +743,33 @@ export class FieldsService {
           "Rule book updated successfully, but slot synchronization failed. Please retry slot sync.",
       };
     }
+  }
+  async getRuleBooksByAdmin(account: AuthenticatedAccount) {
+    this.ensureAdmin(account);
+    // Get all rule books for all fields owned by this admin
+    return this.fieldRuleBooksRepository
+      .createQueryBuilder("rule")
+      .leftJoinAndSelect("rule.field", "field")
+      .where("field.owner_id = :ownerId", { ownerId: account.id })
+      .orderBy("rule.created_at", "DESC")
+      .getMany();
+  }
+
+  async getRuleBooksByUser(account: AuthenticatedAccount) {
+    // Return rule books for all fields owned by this user (admin or user)
+    return this.fieldRuleBooksRepository
+      .createQueryBuilder("rule")
+      .leftJoinAndSelect("rule.field", "field")
+      .where("field.owner_id = :ownerId", { ownerId: account.id })
+      .orderBy("rule.created_at", "DESC")
+      .getMany();
+  }
+
+  async getRuleBooksByField(fieldId: string) {
+    return this.fieldRuleBooksRepository.find({
+      where: { fieldId },
+      order: { createdAt: "DESC" },
+    });
   }
 
   private normalizeCreateFieldInput(createFieldDto: CreateFieldDto): {

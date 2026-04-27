@@ -110,6 +110,40 @@ export class FieldsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get("rule-books/:ruleBookId")
+  async getRuleBookById(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("ruleBookId", new ParseUUIDPipe()) ruleBookId: string,
+  ) {
+    return this.fieldsService.getRuleBookById(ruleBookId, account);
+  }
+  @UseGuards(JwtAuthGuard)
+  @Get("schedule-settings/by-admin")
+  getAllScheduleSettingsByAdmin(
+    @CurrentAccount() account: AuthenticatedAccount,
+  ) {
+    return this.fieldsService.getAllScheduleSettingsByAdmin(account);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("schedule-settings/:scheduleSettingId")
+  async getScheduleSettingById(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("scheduleSettingId", new ParseUUIDPipe()) scheduleSettingId: string,
+  ) {
+    return this.fieldsService.getScheduleSettingById(
+      scheduleSettingId,
+      account,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("schedule-settings")
+  getScheduleSettingByUserId(@CurrentAccount() account: AuthenticatedAccount) {
+    return this.fieldsService.getScheduleSettingByUserId(account);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Patch(":fieldId/schedule-settings")
   updateScheduleSettings(
     @CurrentAccount() account: AuthenticatedAccount,
@@ -146,6 +180,23 @@ export class FieldsController {
       ruleBookId,
       dto,
     );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("rule-books/by-admin")
+  getRuleBooksByAdmin(@CurrentAccount() account: AuthenticatedAccount) {
+    return this.fieldsService.getRuleBooksByAdmin(account);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("rule-books/by-user")
+  getRuleBooksByUser(@CurrentAccount() account: AuthenticatedAccount) {
+    return this.fieldsService.getRuleBooksByUser(account);
+  }
+
+  @Get("rule-books/by-field/:fieldId")
+  getRuleBooksByField(@Param("fieldId", new ParseUUIDPipe()) fieldId: string) {
+    return this.fieldsService.getRuleBooksByField(fieldId);
   }
 
   private validateDto(value: unknown, label: string): CreateFieldDto {

@@ -1,11 +1,11 @@
 meta {
-  name: GetMyFields
+  name: GetCurrentAccount
   type: http
-  seq: 2
+  seq: 3
 }
 
 get {
-  url: {{development}}/fields/mine
+  url: {{development}}/auth/me
   body: none
   auth: bearer
 }

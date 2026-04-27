@@ -1,11 +1,11 @@
 meta {
-  name: GetMyFields
+  name: GetScheduleSettingById
   type: http
   seq: 2
 }
 
 get {
-  url: {{development}}/fields/mine
+  url: {{development}}/fields/schedule-settings/{{scheduleSettingId}}
   body: none
   auth: bearer
 }
