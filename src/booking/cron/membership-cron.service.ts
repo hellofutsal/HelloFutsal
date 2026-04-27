@@ -20,7 +20,7 @@ export class MembershipCronService {
   ) {}
 
   // Runs every day at midnight
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron("2 0 * * *") // Runs every day at 00:05
   async blockUpcomingMembershipSlots() {
     const today = new Date();
     const dayOfWeek = today.getDay();
