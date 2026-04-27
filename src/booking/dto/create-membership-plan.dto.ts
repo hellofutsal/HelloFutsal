@@ -16,9 +16,6 @@ export class CreateMembershipPlanDto {
 
   @IsString()
   phoneNumber!: string;
-  @IsOptional()
-  @IsUUID()
-  userId?: string;
 
   @IsUUID()
   fieldId!: string;

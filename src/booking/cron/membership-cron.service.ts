@@ -19,8 +19,8 @@ export class MembershipCronService {
     private readonly bookingRepo: Repository<Booking>,
   ) {}
 
-  // Runs every day at midnight
-  @Cron("2 0 * * *") // Runs every day at 00:05
+  // Runs every day at 00:02 (after field slot cron)
+  @Cron("2 0 * * *")
   async blockUpcomingMembershipSlots() {
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -36,22 +36,26 @@ export class MembershipCronService {
     const todayDayName = dayNames[dayOfWeek];
     const nextWeek = new Date(today);
     nextWeek.setDate(today.getDate() + 7);
+    // Format nextWeek as YYYY-MM-DD in local time
+    const nextWeekStr = `${nextWeek.getFullYear()}-${String(nextWeek.getMonth() + 1).padStart(2, "0")}-${String(nextWeek.getDate()).padStart(2, "0")}`;
 
     const plans = await this.membershipPlanRepo.find({
       where: { active: true },
+      relations: ["field", "user"],
     });
     for (const plan of plans) {
+      if (!plan.field || !plan.user) continue;
       if (
         !plan.daysOfWeek ||
         !Array.isArray(plan.daysOfWeek) ||
         !plan.daysOfWeek.includes(todayDayName)
       )
         continue;
-      // Find slot for next week
+      // Find slot for next week (using local date string)
       const slot = await this.fieldSlotRepo.findOne({
         where: {
           field: { id: plan.field.id },
-          slotDate: nextWeek.toISOString().slice(0, 10),
+          slotDate: nextWeekStr,
           startTime: plan.startTime,
           endTime: plan.endTime,
         },
