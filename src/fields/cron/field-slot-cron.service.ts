@@ -25,7 +25,8 @@ export class FieldSlotCronService {
     private readonly bookingRepo: Repository<Booking>,
   ) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  // @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron("*/3 * * * *")
   async generateTomorrowSlotsAndBookMemberships(): Promise<void> {
     // 1. Roll/Create slots as before
     const fields = await this.fieldsRepository.find({
