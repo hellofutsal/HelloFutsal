@@ -1,0 +1,22 @@
+{
+  "name": "Create Membership Plan & Sync Membership Slots",
+  "requests": [
+    {
+      "name": "Create Membership Plan",
+      "method": "POST",
+      "url": "http://localhost:3000/membership-plans",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": {
+        "userId": "<USER_ID>",
+        "fieldId": "<FIELD_ID>",
+        "dayOfWeek": 5,
+        "startTime": "14:00",
+        "endTime": "15:00",
+        "active": true
+      },
+      "description": "Creates a membership plan and immediately syncs all matching available slots for the user. Replace <USER_ID> and <FIELD_ID> with actual values."
+    }
+  ]
+}
