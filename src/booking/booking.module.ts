@@ -9,10 +9,17 @@ import { BookingService } from "./booking.service";
 import { MembershipPlanController } from "./membership-plan.controller";
 import { MembershipCronService } from "./cron/membership-cron.service";
 import { BookingRevenueModule } from "./revenue/booking-revenue.module";
+import { Field } from "../fields/entities/field.entity";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Booking, FieldSlot, UserAccount, MembershipPlan]),
+    TypeOrmModule.forFeature([
+      Booking,
+      FieldSlot,
+      UserAccount,
+      MembershipPlan,
+      Field,
+    ]),
     BookingRevenueModule,
   ],
   controllers: [BookingController, MembershipPlanController],
