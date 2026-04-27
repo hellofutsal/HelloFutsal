@@ -66,7 +66,7 @@ export class FieldSlotCronService {
     }
 
     this.logger.log(
-      `Midnight slot cron finished. Processed=${processedCount}, Failed=${failedCount}`,
+      `Midnight slot-roll phase finished. Processed=${processedCount}, Failed=${failedCount}`,
     );
 
     // 2. Book membership slots
@@ -158,6 +158,9 @@ export class FieldSlotCronService {
     }
     this.logger.log(
       `Membership slot booking finished. Processed=${membershipProcessed}`,
+    );
+    this.logger.log(
+      `Midnight slot cron finished. SlotRollProcessed=${processedCount}, SlotRollFailed=${failedCount}, MembershipProcessed=${membershipProcessed}`,
     );
   }
 }

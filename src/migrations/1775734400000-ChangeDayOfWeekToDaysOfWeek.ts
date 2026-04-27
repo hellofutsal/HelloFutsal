@@ -4,6 +4,20 @@ export class ChangeDayOfWeekToDaysOfWeek1775734400000 implements MigrationInterf
   name = "ChangeDayOfWeekToDaysOfWeek1775734400000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Abort if any invalid day_of_week values exist
+    const invalid = await queryRunner.query(
+      `SELECT array_agg("day_of_week") as invalids FROM "membership_plans" WHERE "day_of_week" IS NOT NULL AND "day_of_week" NOT IN (0,1,2,3,4,5,6);`,
+    );
+    if (
+      invalid &&
+      invalid[0] &&
+      invalid[0].invalids &&
+      invalid[0].invalids.length > 0
+    ) {
+      throw new Error(
+        `Invalid day_of_week value(s) found in membership_plans: ${invalid[0].invalids}`,
+      );
+    }
     // 1. Add new column with default '' (simple-array expects string)
     await queryRunner.query(`
       ALTER TABLE "membership_plans"
