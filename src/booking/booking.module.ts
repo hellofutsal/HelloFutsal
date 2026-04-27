@@ -7,7 +7,6 @@ import { FieldSlot } from "../fields/entities/field-slot.entity";
 import { BookingController } from "./booking.controller";
 import { BookingService } from "./booking.service";
 import { MembershipPlanController } from "./membership-plan.controller";
-import { MembershipCronService } from "./cron/membership-cron.service";
 import { BookingRevenueModule } from "./revenue/booking-revenue.module";
 import { Field } from "../fields/entities/field.entity";
 
@@ -22,7 +21,7 @@ import { Field } from "../fields/entities/field.entity";
     ]),
     BookingRevenueModule,
   ],
-  controllers: [BookingController, MembershipPlanController],
-  providers: [BookingService, MembershipCronService],
+  controllers: [BookingController],
+  providers: [BookingService],
 })
 export class BookingModule {}

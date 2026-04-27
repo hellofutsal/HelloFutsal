@@ -5,6 +5,9 @@ import { Repository } from "typeorm";
 import { Field } from "../entities/field.entity";
 import { FieldSlotGenerator } from "./field-slot-generator";
 import { FieldSlotSyncService } from "./field-slot-sync.service";
+import { MembershipPlan } from "../../booking/entities/membership-plan.entity";
+import { Booking } from "../../booking/entities/booking.entity";
+import { FieldSlot } from "../entities/field-slot.entity";
 
 @Injectable()
 export class FieldSlotCronService {
@@ -14,10 +17,17 @@ export class FieldSlotCronService {
     @InjectRepository(Field)
     private readonly fieldsRepository: Repository<Field>,
     private readonly fieldSlotSyncService: FieldSlotSyncService,
+    @InjectRepository(MembershipPlan)
+    private readonly membershipPlanRepo: Repository<MembershipPlan>,
+    @InjectRepository(FieldSlot)
+    private readonly fieldSlotRepo: Repository<FieldSlot>,
+    @InjectRepository(Booking)
+    private readonly bookingRepo: Repository<Booking>,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
-  async generateTomorrowSlotsFromRuleBooks(): Promise<void> {
+  async generateTomorrowSlotsAndBookMemberships(): Promise<void> {
+    // 1. Roll/Create slots as before
     const fields = await this.fieldsRepository.find({
       where: { isActive: true },
       relations: { scheduleSettings: true, ruleBooks: true },
@@ -57,6 +67,71 @@ export class FieldSlotCronService {
 
     this.logger.log(
       `Midnight slot cron finished. Processed=${processedCount}, Failed=${failedCount}`,
+    );
+
+    // 2. Book membership slots
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const dayNames = [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+    ];
+    const todayDayName = dayNames[dayOfWeek];
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 7);
+    // Format nextWeek as YYYY-MM-DD in local time
+    const nextWeekStr = `${nextWeek.getFullYear()}-${String(nextWeek.getMonth() + 1).padStart(2, "0")}-${String(nextWeek.getDate()).padStart(2, "0")}`;
+
+    const plans = await this.membershipPlanRepo.find({
+      where: { active: true },
+      relations: ["field", "user"],
+    });
+    let membershipProcessed = 0;
+    for (const plan of plans) {
+      if (!plan.field || !plan.user) continue;
+      if (
+        !plan.daysOfWeek ||
+        !Array.isArray(plan.daysOfWeek) ||
+        !plan.daysOfWeek.includes(todayDayName)
+      )
+        continue;
+      // Find slot for next week (using local date string)
+      const slot = await this.fieldSlotRepo.findOne({
+        where: {
+          field: { id: plan.field.id },
+          slotDate: nextWeekStr,
+          startTime: plan.startTime,
+          endTime: plan.endTime,
+        },
+      });
+      if (slot && slot.status === "available") {
+        // Book the slot for the membership user
+        await this.bookingRepo.save(
+          this.bookingRepo.create({
+            fieldId: plan.field.id,
+            slotId: slot.id,
+            userId: plan.user.id,
+            status: "booked",
+            extraAmount: "0",
+            bookingType: "membership",
+          }),
+        );
+        slot.status = "booked";
+        slot.slotType = "membership";
+        await this.fieldSlotRepo.save(slot);
+        membershipProcessed++;
+        this.logger.log(
+          `Blocked slot ${slot.id} for membership user ${plan.user.id} on field ${plan.field.id}`,
+        );
+      }
+    }
+    this.logger.log(
+      `Membership slot booking finished. Processed=${membershipProcessed}`,
     );
   }
 }
