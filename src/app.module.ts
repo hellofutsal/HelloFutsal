@@ -16,7 +16,9 @@ import { FieldSlot } from "./fields/entities/field-slot.entity";
 import { FieldsModule } from "./fields/fields.module";
 import { KeepAliveModule } from "./keep-alive/keep-alive.module";
 import { MigrationModule } from "./migration/migration.module";
+import { MigrationController } from "./migration/migration.controller";
 import { AppController } from "./app.controller";
+import { AppService } from "./app.service";
 
 function resolveSslConfig(configService: ConfigService, sslMode: string) {
   if (sslMode === "disable" || sslMode === "allow" || sslMode === "prefer") {
@@ -145,6 +147,7 @@ function getDatabaseConfig(configService: ConfigService) {
     KeepAliveModule,
     MigrationModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, MigrationController],
+  providers: [AppService],
 })
 export class AppModule {}
