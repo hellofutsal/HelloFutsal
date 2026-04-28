@@ -25,8 +25,8 @@ export class FieldSlotCronService {
     private readonly bookingRepo: Repository<Booking>,
   ) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
-  // @Cron("*/3 * * * *")
+  // @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron("*/1 * * * *")
   async generateTomorrowSlotsAndBookMemberships(): Promise<void> {
     // 1. Roll/Create slots as before
     const fields = await this.fieldsRepository.find({
@@ -84,9 +84,9 @@ export class FieldSlotCronService {
     ];
     const todayDayName = dayNames[dayOfWeek];
     
-    // We need to check and book slots for the next 7 days (not just next week)
+    // We need to check and book slots for the next 30 days to cover membership bookings
     const upcomingDates: string[] = [];
-    for (let i = 1; i <= 7; i++) {
+    for (let i = 1; i <= 30; i++) {
       const futureDate = new Date(today);
       futureDate.setDate(today.getDate() + i);
       const dateStr = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, "0")}-${String(futureDate.getDate()).padStart(2, "0")}`;
@@ -97,6 +97,10 @@ export class FieldSlotCronService {
       where: { active: true },
       relations: ["field", "user"],
     });
+    
+    this.logger.log(`Found ${plans.length} active membership plans`);
+    this.logger.log(`Upcoming dates to check: ${upcomingDates.join(', ')}`);
+    
     let membershipProcessed = 0;
     let membershipSkipped = 0;
     let membershipCreated = 0;
@@ -104,14 +108,23 @@ export class FieldSlotCronService {
     for (const plan of plans) {
       if (!plan.field || !plan.user) continue;
       
+      this.logger.log(`Processing membership plan: User=${plan.user.name}, Field=${plan.field.fieldName}, Days=${plan.daysOfWeek}, Time=${plan.startTime}-${plan.endTime}`);
+      
       // Check each upcoming date for this membership plan
       for (const upcomingDate of upcomingDates) {
         // Get day name for this upcoming date
         const upcomingDateObj = new Date(upcomingDate);
         const upcomingDayName = dayNames[upcomingDateObj.getDay()];
         
+        this.logger.log(`Checking date ${upcomingDate} (${upcomingDayName}) against plan days: ${plan.daysOfWeek.join(', ')}`);
+        
         // Check if this day is in the membership plan's days
-        if (!plan.daysOfWeek.includes(upcomingDayName)) continue;
+        if (!plan.daysOfWeek.includes(upcomingDayName)) {
+          this.logger.log(`Skipping ${upcomingDate} - day ${upcomingDayName} not in plan days`);
+          continue;
+        }
+        
+        this.logger.log(`Found matching date ${upcomingDate} (${upcomingDayName}) - attempting to book slot for field ${plan.field.id} at ${plan.startTime}-${plan.endTime}`);
         
         try {
           const booked = await this.fieldSlotRepo.manager.transaction(
@@ -127,6 +140,13 @@ export class FieldSlotCronService {
                 })
                 .andWhere("slot.end_time = :endTime", { endTime: plan.endTime })
                 .getOne();
+
+              this.logger.log(`Slot search result for ${upcomingDate} ${plan.startTime}-${plan.endTime}:`, existingSlot ? {
+                id: existingSlot.id,
+                status: existingSlot.status,
+                slotType: existingSlot.slotType,
+                price: existingSlot.price
+              } : 'NOT FOUND');
 
               if (!existingSlot) {
                 this.logger.warn(
@@ -167,12 +187,38 @@ export class FieldSlotCronService {
 
               if (!slot) return false;
 
-              // Check if slot is available for membership booking
+              // If slot is booked for non-membership, override it with membership booking
               if (slot.status === "booked" && slot.slotType !== "membership") {
-                this.logger.warn(
-                  `Slot ${slot.id} already booked for non-membership on field ${plan.field.id} at ${plan.startTime} for date ${upcomingDate}`,
+                this.logger.log(
+                  `Overriding non-membership booking for slot ${slot.id} with membership booking for user ${plan.user.id} on field ${plan.field.id}`,
                 );
-                return false;
+                
+                // Update slot to membership type and price
+                slot.status = "booked";
+                slot.slotType = "membership";
+                
+                // Update existing booking to membership type
+                const existingBooking = await manager
+                  .getRepository(Booking)
+                  .createQueryBuilder("booking")
+                  .where("booking.slot_id = :slotId", { slotId: slot.id })
+                  .getOne();
+                  
+                if (existingBooking) {
+                  existingBooking.userId = plan.user.id;
+                  existingBooking.bookingType = "membership";
+                  existingBooking.extraAmount = "0";
+                  await manager.save(Booking, existingBooking);
+                }
+                
+                await manager.save(FieldSlot, slot);
+                return {
+                  slotId: slot.id,
+                  userId: plan.user.id,
+                  fieldId: plan.field.id,
+                  date: upcomingDate,
+                  action: "overridden",
+                };
               }
 
               // Calculate per-day price from monthlyPrice if set
@@ -237,11 +283,13 @@ export class FieldSlotCronService {
           if (booked) {
             if (booked.action === "created") {
               membershipCreated++;
+            } else if (booked.action === "overridden") {
+              membershipProcessed++;
             } else {
               membershipProcessed++;
             }
             this.logger.log(
-              `${booked.action === 'updated' ? 'Updated' : 'Created'} membership booking for slot ${booked.slotId} user ${booked.userId} on field ${booked.fieldId} for date ${booked.date}`,
+              `${booked.action === 'updated' ? 'Updated' : booked.action === 'overridden' ? 'Overridden' : 'Created'} membership booking for slot ${booked.slotId} user ${booked.userId} on field ${booked.fieldId} for date ${booked.date}`,
             );
           } else {
             membershipSkipped++;
