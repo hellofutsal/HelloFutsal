@@ -2,6 +2,8 @@ import {
   IsUUID,
   IsString,
   IsBoolean,
+  IsNumber,
+  IsPositive,
   Matches,
   IsArray,
   ArrayNotEmpty,
@@ -52,4 +54,12 @@ export class CreateMembershipPlanDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  /**
+   * Monthly price for this membership plan.
+   * Per-slot price = monthlyPrice / 30 (applied to each matched slot).
+   */
+  @IsNumber()
+  @IsPositive()
+  monthlyPrice!: number;
 }

@@ -1,6 +1,6 @@
 import { Body, Controller, Post } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, MoreThanOrEqual } from "typeorm";
+import { Repository } from "typeorm";
 import { MembershipPlan } from "./entities/membership-plan.entity";
 import { CreateMembershipPlanDto } from "./dto/create-membership-plan.dto";
 import { UserAccount } from "../auth/entities/user.entity";
@@ -23,6 +23,15 @@ export class MembershipPlanController {
     private readonly bookingRepo: Repository<Booking>,
   ) {}
 
+  /**
+   * Computes the per-slot membership price from a monthly price.
+   * Formula: monthlyPrice / 30  (1 month = 30 days, 1 day = 1 slot time-block)
+   */
+  private computeSlotPrice(monthlyPrice: number): string {
+    const perSlot = monthlyPrice / 30;
+    return perSlot.toFixed(2);
+  }
+
   @Post()
   async createMembershipPlan(@Body() dto: CreateMembershipPlanDto) {
     // Find or create user by phone number
@@ -40,34 +49,41 @@ export class MembershipPlanController {
       user.name = dto.userName;
       user = await this.userRepo.save(user);
     }
+
     const field = await this.fieldRepo.findOneByOrFail({ id: dto.fieldId });
+
     const plan = this.membershipPlanRepo.create({
       user,
       field,
       daysOfWeek: dto.daysOfWeek,
       startTime: dto.startTime,
       endTime: dto.endTime,
-      active: dto.active,
+      active: dto.active ?? true,
       userName: dto.userName,
       phoneNumber: dto.phoneNumber,
+      monthlyPrice: dto.monthlyPrice.toFixed(2),
     });
     await this.membershipPlanRepo.save(plan);
 
+    // Per-slot price derived from monthly price (monthlyPrice / 30)
+    const membershipSlotPrice = this.computeSlotPrice(dto.monthlyPrice);
+
     let syncedCount = 0;
-    if (dto.active) {
-      // Sync with existing slots: find all future slots for this field, time, and available, for all selected days
+    if (plan.active) {
+      // Sync with existing slots: find all future available slots for this field and exact time window
       const today = new Date();
-      today.setHours(0, 0, 0, 0); // local midnight
+      today.setHours(0, 0, 0, 0);
+
       const allSlots = await this.fieldSlotRepo
         .createQueryBuilder("slot")
         .where("slot.field_id = :fieldId", { fieldId: field.id })
         .andWhere("slot.start_time = :startTime", { startTime: dto.startTime })
         .andWhere("slot.end_time = :endTime", { endTime: dto.endTime })
         .andWhere("slot.status = :status", { status: "available" })
-        .andWhere("slot.slot_date >= :today", { today: today })
+        .andWhere("slot.slot_date >= :today", { today })
         .getMany();
 
-      // Helper to map JS getDay() to string
+      // Helper: JS getDay() index → day name
       const dayNames = [
         "sunday",
         "monday",
@@ -77,9 +93,10 @@ export class MembershipPlanController {
         "friday",
         "saturday",
       ];
+
       await this.fieldSlotRepo.manager.transaction(async (manager) => {
         for (const slot of allSlots) {
-          // Parse slot.slotDate as local date (YYYY-MM-DD)
+          // Parse slot date as local date (YYYY-MM-DD)
           let slotDateObj: Date;
           if (/^\d{4}-\d{2}-\d{2}$/.test(slot.slotDate)) {
             const [year, month, day] = slot.slotDate.split("-").map(Number);
@@ -87,24 +104,31 @@ export class MembershipPlanController {
           } else {
             slotDateObj = new Date(slot.slotDate);
           }
+
           const slotDayName = dayNames[slotDateObj.getDay()];
           if (!dto.daysOfWeek.includes(slotDayName)) continue;
-          // Lock slot for update
+
+          // Lock the slot for update
           const lockedSlot = await manager
             .getRepository(FieldSlot)
             .createQueryBuilder("slot")
             .where("slot.id = :id", { id: slot.id })
             .setLock("pessimistic_write")
             .getOne();
+
           if (!lockedSlot || lockedSlot.status !== "available") continue;
+
+          // Apply membership pricing and mark as booked
           lockedSlot.status = "booked";
           lockedSlot.slotType = "membership";
+          lockedSlot.price = membershipSlotPrice; // override price with membership rate
           await manager.save(FieldSlot, lockedSlot);
-          // Create booking for this slot
+
+          // Create booking record
           const booking = this.bookingRepo.create({
             fieldId: field.id,
             slotId: slot.id,
-            userId: user.id,
+            userId: user!.id,
             status: "booked",
             extraAmount: "0",
             bookingType: "membership",
@@ -115,6 +139,13 @@ export class MembershipPlanController {
       });
     }
 
-    return { success: true, plan, syncedSlots: syncedCount };
+    return {
+      success: true,
+      plan: {
+        ...plan,
+        perSlotPrice: membershipSlotPrice,
+      },
+      syncedSlots: syncedCount,
+    };
   }
 }

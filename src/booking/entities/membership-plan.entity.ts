@@ -12,13 +12,14 @@ import { Field } from "../../fields/entities/field.entity";
 
 @Entity({ name: "membership_plans" })
 export class MembershipPlan {
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
   @Column({ name: "user_name", type: "varchar", length: 120 })
   userName!: string;
 
   @Column({ name: "phone_number", type: "varchar", length: 20 })
   phoneNumber!: string;
-  @PrimaryGeneratedColumn("uuid")
-  id!: string;
 
   @ManyToOne(() => UserAccount, { onDelete: "CASCADE" })
   @JoinColumn({ name: "user_id" })
@@ -36,6 +37,19 @@ export class MembershipPlan {
 
   @Column({ name: "end_time", type: "time" })
   endTime!: string;
+
+  /**
+   * Monthly price charged for this membership plan.
+   * The per-slot price is computed as: monthlyPrice / 30
+   */
+  @Column({
+    name: "monthly_price",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  monthlyPrice!: string;
 
   @Column({ name: "active", type: "boolean", default: true })
   active!: boolean;

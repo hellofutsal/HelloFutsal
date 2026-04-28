@@ -247,18 +247,43 @@ export class FieldsService {
       throw new BadRequestException("Slots must not repeat within the request");
     }
 
+    // Check if slots already exist in database and implement them immediately if found
     const existingSlots = await this.findExistingSlotsByField(
       fieldId,
       normalizedSlots,
     );
 
-    if (existingSlots.length > 0) {
-      throw new ConflictException(
-        `One or more slots already exist: ${existingSlots.join(", ")}`,
+    const existingSlotKeys = new Set(existingSlots);
+    const slotsToCreate: Array<{ slotDate: string; startTime: string; endTime: string; price: string }> = [];
+    const slotsToImplement: Array<{ slotDate: string; startTime: string; endTime: string }> = [];
+
+    normalizedSlots.forEach((slot) => {
+      const slotKey = `${slot.slotDate} ${slot.startTime}`;
+      if (existingSlotKeys.has(slotKey)) {
+        slotsToImplement.push({
+          slotDate: slot.slotDate,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        });
+      } else {
+        slotsToCreate.push(slot);
+      }
+    });
+
+    // Implement existing slots immediately (activate them if they were inactive)
+    if (slotsToImplement.length > 0) {
+      await this.implementExistingSlots(fieldId, slotsToImplement);
+      this.logger.log(
+        `Implemented ${slotsToImplement.length} existing slots for fieldId=${fieldId}`,
       );
     }
 
-    const slotEntities = normalizedSlots.map((slot) =>
+    // Create new slots if any
+    if (slotsToCreate.length === 0) {
+      return [];
+    }
+
+    const slotEntities = slotsToCreate.map((slot) =>
       this.fieldSlotsRepository.create({
         fieldId,
         slotDate: slot.slotDate,
@@ -1138,6 +1163,36 @@ export class FieldsService {
       .getRawMany<{ slotDate: string; startTime: string }>();
 
     return existingSlots.map((slot) => `${slot.slotDate} ${slot.startTime}`);
+  }
+
+  private async implementExistingSlots(
+    fieldId: string,
+    slots: Array<{ slotDate: string; startTime: string; endTime: string }>,
+  ): Promise<void> {
+    if (slots.length === 0) {
+      return;
+    }
+
+    await this.fieldSlotsRepository.manager.transaction(
+      async (manager) => {
+        const repository = manager.getRepository(FieldSlot);
+        
+        for (const slot of slots) {
+          await repository.update(
+            {
+              fieldId,
+              slotDate: slot.slotDate,
+              startTime: slot.startTime,
+              endTime: slot.endTime,
+            },
+            {
+              status: "available",
+              slotType: "normal",
+            },
+          );
+        }
+      },
+    );
   }
 
   private async ensureVenueFieldPairIsAvailable(

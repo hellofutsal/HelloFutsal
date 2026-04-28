@@ -7,6 +7,8 @@ import { FieldRuleBook } from "./fields/entities/field-rule-book.entity";
 import { Field } from "./fields/entities/field.entity";
 import { FieldScheduleSettings } from "./fields/entities/field-schedule-settings.entity";
 import { FieldSlot } from "./fields/entities/field-slot.entity";
+import { MembershipPlan } from "./booking/entities/membership-plan.entity";
+import { Booking } from "./booking/entities/booking.entity";
 import { join } from "path";
 
 function resolveSslConfig(sslMode: string) {
@@ -72,6 +74,8 @@ export default new DataSource({
     FieldScheduleSettings,
     FieldRuleBook,
     FieldSlot,
+    MembershipPlan,
+    Booking,
   ],
   migrations: [join(__dirname, "migrations", "*{.ts,.js}")],
 });

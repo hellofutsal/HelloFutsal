@@ -10,6 +10,7 @@ import { GroundOwnerAccount } from "../auth/entities/ground-owner.entity";
 import { UserAccount } from "../auth/entities/user.entity";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { Booking } from "./entities/booking.entity";
+import { MembershipPlan } from "./entities/membership-plan.entity";
 import { Field } from "../fields/entities/field.entity";
 import { FieldSlot } from "../fields/entities/field-slot.entity";
 import { CreateBookingDto } from "./dto/create-booking.dto";
@@ -24,6 +25,8 @@ export class BookingService {
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
     @InjectRepository(UserAccount)
     private readonly userAccountsRepository: Repository<UserAccount>,
+    @InjectRepository(MembershipPlan)
+    private readonly membershipPlanRepository: Repository<MembershipPlan>,
   ) {}
 
   async createBooking(
@@ -40,6 +43,8 @@ export class BookingService {
         async (manager) => {
           const slotRepository = manager.getRepository(FieldSlot);
           const userRepository = manager.getRepository(UserAccount);
+          const membershipPlanRepository =
+            manager.getRepository(MembershipPlan);
 
           const slot = await slotRepository
             .createQueryBuilder("slot")
@@ -85,12 +90,50 @@ export class BookingService {
             user = await userRepository.save(user);
           }
 
+          // ---------------------------------------------------------------------------
+          // Membership pricing: check if an active membership plan covers this slot.
+          // Matching criteria:
+          //   • same field
+          //   • slot's day-of-week is in plan.daysOfWeek
+          //   • slot's startTime & endTime match the plan's window exactly
+          //
+          // If a match is found, override the slot price with  monthlyPrice / 30
+          // and mark both the slot and the booking as "membership" type.
+          // ---------------------------------------------------------------------------
+          let bookingType: "normal" | "membership" = "normal";
+
+          const slotDayName = this.getDayName(slot.slotDate);
+
+          const matchingPlan = await membershipPlanRepository
+            .createQueryBuilder("plan")
+            .where("plan.field_id = :fieldId", { fieldId: slot.fieldId })
+            .andWhere("plan.start_time = :startTime", {
+              startTime: slot.startTime,
+            })
+            .andWhere("plan.end_time = :endTime", { endTime: slot.endTime })
+            .andWhere("plan.active = true")
+            .getMany()
+            .then((plans) =>
+              plans.find((p) => p.daysOfWeek.includes(slotDayName)),
+            );
+
+          if (matchingPlan) {
+            const perSlotPrice = this.computeMembershipSlotPrice(
+              matchingPlan.monthlyPrice,
+            );
+            slot.price = perSlotPrice;
+            slot.slotType = "membership";
+            bookingType = "membership";
+          }
+          // ---------------------------------------------------------------------------
+
           const booking = await manager.getRepository(Booking).save(
             manager.getRepository(Booking).create({
               fieldId: slot.fieldId,
               slotId: slot.id,
               userId: user.id,
               status: "booked",
+              bookingType,
               extraAmount: this.formatAmount(0),
             }),
           );
@@ -105,6 +148,7 @@ export class BookingService {
               slotId: booking.slotId,
               userId: booking.userId,
               status: booking.status,
+              bookingType: booking.bookingType,
               baseAmount: this.formatAmount(slot.price),
               extraAmount: this.formatAmount(booking.extraAmount),
               totalAmount: this.sumAmounts(slot.price, booking.extraAmount),
@@ -115,6 +159,7 @@ export class BookingService {
               slotDate: slot.slotDate,
               startTime: slot.startTime,
               endTime: slot.endTime,
+              slotType: slot.slotType,
               status: slot.status,
               price: this.formatAmount(slot.price),
             },
@@ -200,6 +245,7 @@ export class BookingService {
           slotId: booking.slotId,
           userId: booking.userId,
           status: booking.status,
+          bookingType: booking.bookingType,
           baseAmount: this.formatAmount(slot.price),
           extraAmount: this.formatAmount(booking.extraAmount),
           totalAmount: this.sumAmounts(slot.price, booking.extraAmount),
@@ -210,6 +256,7 @@ export class BookingService {
           slotDate: slot.slotDate,
           startTime: slot.startTime,
           endTime: slot.endTime,
+          slotType: slot.slotType,
           status: slot.status,
           price: this.formatAmount(slot.price),
         },
@@ -248,6 +295,7 @@ export class BookingService {
       booking: {
         id: booking.id,
         status: booking.status,
+        bookingType: booking.bookingType,
         baseAmount: this.formatAmount(booking.slot.price),
         extraAmount: this.formatAmount(booking.extraAmount),
         totalAmount: this.sumAmounts(booking.slot.price, booking.extraAmount),
@@ -269,10 +317,51 @@ export class BookingService {
         slotDate: booking.slot.slotDate,
         startTime: booking.slot.startTime,
         endTime: booking.slot.endTime,
+        slotType: booking.slot.slotType,
         status: booking.slot.status,
         price: this.formatAmount(booking.slot.price),
       },
     }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns the lowercase day name (e.g. "monday") for a YYYY-MM-DD date string.
+   */
+  private getDayName(slotDate: string): string {
+    const dayNames = [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+    ];
+
+    let dateObj: Date;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(slotDate)) {
+      const [year, month, day] = slotDate.split("-").map(Number);
+      dateObj = new Date(year, month - 1, day);
+    } else {
+      dateObj = new Date(slotDate);
+    }
+
+    return dayNames[dateObj.getDay()];
+  }
+
+  /**
+   * Computes the per-slot price from a monthly membership price.
+   * Formula: monthlyPrice / 30  (1 month assumed = 30 days)
+   */
+  private computeMembershipSlotPrice(
+    monthlyPrice: string | number | null | undefined,
+  ): string {
+    const monthly = this.parseAmount(monthlyPrice);
+    return (monthly / 30).toFixed(2);
   }
 
   private ensureAdmin(account: AuthenticatedAccount): void {
