@@ -25,6 +25,34 @@ export class FieldSlotCronService {
     private readonly bookingRepo: Repository<Booking>,
   ) {}
 
+  /**
+   * Helper method to check if two time ranges overlap
+   */
+  private timeRangesOverlap(start1: string, end1: string, start2: string, end2: string): boolean {
+    const start1Minutes = this.parseTimeToMinutes(start1);
+    const end1Minutes = this.parseTimeToMinutes(end1);
+    const start2Minutes = this.parseTimeToMinutes(start2);
+    const end2Minutes = this.parseTimeToMinutes(end2);
+
+    return (start1Minutes < end2Minutes && end1Minutes > start2Minutes) ||
+           (start2Minutes < end1Minutes && end2Minutes > start1Minutes);
+  }
+
+  /**
+   * Parses time string to minutes for comparison
+   */
+  private parseTimeToMinutes(time: string): number {
+    const [hoursText, minutesText] = time.trim().split(":");
+    const hours = Number(hoursText);
+    const minutes = Number(minutesText);
+
+    if (Number.isNaN(hours) || Number.isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      throw new Error("Invalid time format");
+    }
+
+    return hours * 60 + minutes;
+  }
+
   // @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   @Cron("*/1 * * * *")
   async generateTomorrowSlotsAndBookMemberships(): Promise<void> {
@@ -108,7 +136,7 @@ export class FieldSlotCronService {
     for (const plan of plans) {
       if (!plan.field || !plan.user) continue;
       
-      this.logger.log(`Processing membership plan: User=${plan.user.name}, Field=${plan.field.fieldName}, Days=${plan.daysOfWeek}, Time=${plan.startTime}-${plan.endTime}`);
+      this.logger.log(`Processing membership plan: User=${plan.user.name}, Field=${plan.field.fieldName}, Days=${plan.daysOfWeek}, Time=${plan.startTime}-${plan.endTime}, StartDate=${plan.startDate}`);
       
       // Check each upcoming date for this membership plan
       for (const upcomingDate of upcomingDates) {
@@ -124,7 +152,27 @@ export class FieldSlotCronService {
           continue;
         }
         
+        // Check if the upcoming date is on or after the membership start date
+        if (upcomingDate < plan.startDate) {
+          this.logger.log(`Skipping ${upcomingDate} - date is before membership start date ${plan.startDate}`);
+          continue;
+        }
+        
         this.logger.log(`Found matching date ${upcomingDate} (${upcomingDayName}) - attempting to book slot for field ${plan.field.id} at ${plan.startTime}-${plan.endTime}`);
+        
+        // Check if there are other membership plans that might conflict with this slot
+        const conflictingPlans = plans.filter(otherPlan => 
+          otherPlan.id !== plan.id &&
+          otherPlan.field.id === plan.field.id &&
+          otherPlan.daysOfWeek.includes(upcomingDayName) &&
+          this.timeRangesOverlap(plan.startTime, plan.endTime, otherPlan.startTime, otherPlan.endTime)
+        );
+        
+        if (conflictingPlans.length > 0) {
+          this.logger.warn(`Multiple membership plans conflict for ${upcomingDate} ${plan.startTime}-${plan.endTime}: ${conflictingPlans.map(p => p.user.name).join(', ')}. Skipping this slot.`);
+          membershipSkipped++;
+          continue;
+        }
         
         try {
           const booked = await this.fieldSlotRepo.manager.transaction(

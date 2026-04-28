@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from "@nestjs/common";
+import { Body, Controller, Post, ConflictException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { MembershipPlan } from "./entities/membership-plan.entity";
@@ -32,6 +32,21 @@ export class MembershipPlanController {
     return perSlot.toFixed(2);
   }
 
+  /**
+   * Parses time string to minutes for comparison
+   */
+  private parseTimeToMinutes(time: string): number {
+    const [hoursText, minutesText] = time.trim().split(":");
+    const hours = Number(hoursText);
+    const minutes = Number(minutesText);
+
+    if (Number.isNaN(hours) || Number.isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      throw new Error("Invalid time format");
+    }
+
+    return hours * 60 + minutes;
+  }
+
   @Post()
   async createMembershipPlan(@Body() dto: CreateMembershipPlanDto) {
     // Find or create user by phone number
@@ -52,12 +67,49 @@ export class MembershipPlanController {
 
     const field = await this.fieldRepo.findOneByOrFail({ id: dto.fieldId });
 
+    // Check for existing membership plans with overlapping time ranges on the same field and days
+    const existingPlans = await this.membershipPlanRepo.find({
+      where: { 
+        field: { id: dto.fieldId }, 
+        active: true 
+      },
+      relations: ["field"],
+    });
+
+    for (const existingPlan of existingPlans) {
+      // Check if there are overlapping days
+      const overlappingDays = dto.daysOfWeek.filter(day => 
+        existingPlan.daysOfWeek.includes(day)
+      );
+
+      if (overlappingDays.length > 0) {
+        // Check if time ranges overlap
+        const newStart = this.parseTimeToMinutes(dto.startTime);
+        const newEnd = this.parseTimeToMinutes(dto.endTime);
+        const existingStart = this.parseTimeToMinutes(existingPlan.startTime);
+        const existingEnd = this.parseTimeToMinutes(existingPlan.endTime);
+
+        // Check for time overlap
+        const timeOverlaps = (
+          (newStart < existingEnd && newEnd > existingStart) ||
+          (existingStart < newEnd && existingEnd > newStart)
+        );
+
+        if (timeOverlaps) {
+          throw new ConflictException(
+            `Membership plan conflicts with existing plan for ${overlappingDays.join(', ')} at ${existingPlan.startTime}-${existingPlan.endTime}. Please choose a different time range.`
+          );
+        }
+      }
+    }
+
     const plan = this.membershipPlanRepo.create({
       user,
       field,
       daysOfWeek: dto.daysOfWeek,
       startTime: dto.startTime,
       endTime: dto.endTime,
+      startDate: dto.startDate,
       active: dto.active ?? true,
       userName: dto.userName,
       phoneNumber: dto.phoneNumber,
@@ -80,7 +132,7 @@ export class MembershipPlanController {
         .andWhere("slot.start_time = :startTime", { startTime: dto.startTime })
         .andWhere("slot.end_time = :endTime", { endTime: dto.endTime })
         .andWhere("slot.status = :status", { status: "available" })
-        .andWhere("slot.slot_date >= :today", { today })
+        .andWhere("slot.slot_date >= :startDate", { startDate: dto.startDate })
         .getMany();
 
       // Helper: JS getDay() index → day name

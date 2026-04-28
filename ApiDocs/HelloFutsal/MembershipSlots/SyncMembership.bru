@@ -1,0 +1,30 @@
+meta {
+  name: SyncMembership
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://localhost:3000/membership-plans
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "userName": "Ayush Morning Slot",
+    "phoneNumber": "9867654567",
+    "fieldId": "{{fieldId}}",
+    "daysOfWeek": [
+      "wednesday"
+    ],
+    "startTime": "7:00",
+    "endTime": "8:00",
+    "startDate": "2026-05-01",
+    "monthlyPrice": 12000.00
+  }
+}

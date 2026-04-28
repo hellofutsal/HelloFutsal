@@ -39,6 +39,13 @@ export class MembershipPlan {
   endTime!: string;
 
   /**
+   * Start date from which this membership plan becomes active.
+   * Before this date, the membership plan will not book slots.
+   */
+  @Column({ name: "start_date", type: "date" })
+  startDate!: string;
+
+  /**
    * Monthly price charged for this membership plan.
    * The per-slot price is computed as: monthlyPrice / 30
    */
