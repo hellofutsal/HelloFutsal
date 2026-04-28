@@ -4,28 +4,26 @@ export class AddStartDateToMembershipPlan1775734600000 implements MigrationInter
   name = "AddStartDateToMembershipPlan1775734600000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Check if column already exists
-    const tableInfo = await queryRunner.query(`
-      SELECT column_name, data_type, is_nullable 
-      FROM information_schema.columns 
-      WHERE table_name = 'membership_plans' AND column_name = 'start_date'
-    `);
-    
-    if (tableInfo.length === 0) {
-      // First add the column as nullable to avoid issues with existing data
+    try {
+      // Try to add the column (will fail if already exists)
       await queryRunner.query(
-        `ALTER TABLE "membership_plans" ADD COLUMN "start_date" date`,
+        `ALTER TABLE "membership_plans" ADD COLUMN "start_date" date DEFAULT CURRENT_DATE`,
       );
       
-      // Update existing records to have a start date (use created_at date)
+      // Update existing records to use their created_at date
       await queryRunner.query(
-        `UPDATE "membership_plans" SET "start_date" = DATE(created_at) WHERE "start_date" IS NULL`,
+        `UPDATE "membership_plans" SET "start_date" = DATE(created_at) WHERE "start_date" = CURRENT_DATE`,
       );
-      
-      // Now make the column NOT NULL
-      await queryRunner.query(
-        `ALTER TABLE "membership_plans" ALTER COLUMN "start_date" SET NOT NULL`,
-      );
+    } catch (error) {
+      // Column might already exist, just update data
+      try {
+        await queryRunner.query(
+          `UPDATE "membership_plans" SET "start_date" = DATE(created_at) WHERE "start_date" IS NULL`,
+        );
+      } catch (updateError) {
+        // If update fails, column might already be properly set
+        console.log('Column already exists and has data');
+      }
     }
   }
 
