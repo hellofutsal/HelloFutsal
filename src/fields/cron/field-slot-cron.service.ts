@@ -53,8 +53,8 @@ export class FieldSlotCronService {
     return hours * 60 + minutes;
   }
 
-  // @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
-  @Cron("*/1 * * * *")
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  // @Cron("*/1 * * * *")
   async generateTomorrowSlotsAndBookMemberships(): Promise<void> {
     // 1. Roll/Create slots as before
     const fields = await this.fieldsRepository.find({
