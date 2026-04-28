@@ -4,9 +4,29 @@ export class AddStartDateToMembershipPlan1775734600000 implements MigrationInter
   name = "AddStartDateToMembershipPlan1775734600000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `ALTER TABLE "membership_plans" ADD COLUMN "start_date" date NOT NULL DEFAULT '2026-01-01'`,
-    );
+    // Check if column already exists
+    const tableInfo = await queryRunner.query(`
+      SELECT column_name, data_type, is_nullable 
+      FROM information_schema.columns 
+      WHERE table_name = 'membership_plans' AND column_name = 'start_date'
+    `);
+    
+    if (tableInfo.length === 0) {
+      // First add the column as nullable to avoid issues with existing data
+      await queryRunner.query(
+        `ALTER TABLE "membership_plans" ADD COLUMN "start_date" date`,
+      );
+      
+      // Update existing records to have a start date (use created_at date)
+      await queryRunner.query(
+        `UPDATE "membership_plans" SET "start_date" = DATE(created_at) WHERE "start_date" IS NULL`,
+      );
+      
+      // Now make the column NOT NULL
+      await queryRunner.query(
+        `ALTER TABLE "membership_plans" ALTER COLUMN "start_date" SET NOT NULL`,
+      );
+    }
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
