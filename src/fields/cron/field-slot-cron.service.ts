@@ -102,43 +102,55 @@ export class FieldSlotCronService {
       )
         continue;
       try {
-        await this.fieldSlotRepo.manager.transaction(async (manager) => {
-          // Find slot for next week (using local date string) with pessimistic lock
-          const slot = await manager
-            .getRepository(FieldSlot)
-            .createQueryBuilder("slot")
-            .where("slot.field_id = :fieldId", { fieldId: plan.field.id })
-            .andWhere("slot.slot_date = :slotDate", { slotDate: nextWeekStr })
-            .andWhere("slot.start_time = :startTime", {
-              startTime: plan.startTime,
-            })
-            .andWhere("slot.end_time = :endTime", { endTime: plan.endTime })
-            .setLock("pessimistic_write")
-            .getOne();
-          if (!slot || slot.status !== "available") return;
-          // Check for existing booking for this slot
-          const existingBooking = await manager.getRepository(Booking).findOne({
-            where: { slotId: slot.id },
-          });
-          if (existingBooking) return;
-          // Book the slot for the membership user
-          slot.status = "booked";
-          slot.slotType = "membership";
-          await manager.save(FieldSlot, slot);
-          const booking = this.bookingRepo.create({
-            fieldId: plan.field.id,
-            slotId: slot.id,
-            userId: plan.user.id,
-            status: "booked",
-            extraAmount: "0",
-            bookingType: "membership",
-          });
-          await manager.save(Booking, booking);
+        const booked = await this.fieldSlotRepo.manager.transaction(
+          async (manager) => {
+            // Find slot for next week (using local date string) with pessimistic lock
+            const slot = await manager
+              .getRepository(FieldSlot)
+              .createQueryBuilder("slot")
+              .where("slot.field_id = :fieldId", { fieldId: plan.field.id })
+              .andWhere("slot.slot_date = :slotDate", { slotDate: nextWeekStr })
+              .andWhere("slot.start_time = :startTime", {
+                startTime: plan.startTime,
+              })
+              .andWhere("slot.end_time = :endTime", { endTime: plan.endTime })
+              .setLock("pessimistic_write")
+              .getOne();
+            if (!slot || slot.status !== "available") return false;
+            // Check for existing booking for this slot
+            const existingBooking = await manager
+              .getRepository(Booking)
+              .findOne({
+                where: { slotId: slot.id },
+              });
+            if (existingBooking) return false;
+            // Book the slot for the membership user
+            slot.status = "booked";
+            slot.slotType = "membership";
+            await manager.save(FieldSlot, slot);
+            const booking = this.bookingRepo.create({
+              fieldId: plan.field.id,
+              slotId: slot.id,
+              userId: plan.user.id,
+              status: "booked",
+              extraAmount: "0",
+              bookingType: "membership",
+            });
+            await manager.save(Booking, booking);
+            // Only return true if everything succeeded
+            return {
+              slotId: slot.id,
+              userId: plan.user.id,
+              fieldId: plan.field.id,
+            };
+          },
+        );
+        if (booked) {
           membershipProcessed++;
           this.logger.log(
-            `Blocked slot ${slot.id} for membership user ${plan.user.id} on field ${plan.field.id}`,
+            `Blocked slot ${booked.slotId} for membership user ${booked.userId} on field ${booked.fieldId}`,
           );
-        });
+        }
       } catch (error) {
         // Handle unique constraint violation or log error
         if (
