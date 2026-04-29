@@ -140,8 +140,9 @@ export class FieldSlotCronService {
       
       // Check each upcoming date for this membership plan
       for (const upcomingDate of upcomingDates) {
-        // Get day name for this upcoming date
-        const upcomingDateObj = new Date(upcomingDate);
+        // Get day name for this upcoming date (parse as local time to match BookingService.getDayName())
+        const [year, month, day] = upcomingDate.split('-').map(Number);
+        const upcomingDateObj = new Date(year, month - 1, day);
         const upcomingDayName = dayNames[upcomingDateObj.getDay()];
         
         this.logger.log(`Checking date ${upcomingDate} (${upcomingDayName}) against plan days: ${plan.daysOfWeek.join(', ')}`);
@@ -165,6 +166,7 @@ export class FieldSlotCronService {
           otherPlan.id !== plan.id &&
           otherPlan.field.id === plan.field.id &&
           otherPlan.daysOfWeek.includes(upcomingDayName) &&
+          otherPlan.startDate <= upcomingDate &&
           this.timeRangesOverlap(plan.startTime, plan.endTime, otherPlan.startTime, otherPlan.endTime)
         );
         
@@ -235,6 +237,12 @@ export class FieldSlotCronService {
 
               if (!slot) return false;
 
+              // Calculate per-day price from monthlyPrice if set
+              if (plan.monthlyPrice) {
+                const perDayPrice = (parseFloat(plan.monthlyPrice) / 30).toFixed(2);
+                slot.price = perDayPrice;
+              }
+
               // If slot is booked for non-membership, override it with membership booking
               if (slot.status === "booked" && slot.slotType !== "membership") {
                 this.logger.log(
@@ -267,12 +275,6 @@ export class FieldSlotCronService {
                   date: upcomingDate,
                   action: "overridden",
                 };
-              }
-
-              // Calculate per-day price from monthlyPrice if set
-              if (plan.monthlyPrice) {
-                const perDayPrice = (parseFloat(plan.monthlyPrice) / 30).toFixed(2);
-                slot.price = perDayPrice;
               }
 
               // Check existing booking for this slot

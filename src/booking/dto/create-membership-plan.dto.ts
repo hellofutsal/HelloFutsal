@@ -10,7 +10,9 @@ import {
   ArrayMinSize,
   IsIn,
   IsOptional,
+  Validate,
 } from "class-validator";
+import { DateYYYYMMDDConstraint } from "./date-yyyymmdd.constraint";
 
 export class CreateMembershipPlanDto {
   @IsString()
@@ -40,21 +42,19 @@ export class CreateMembershipPlanDto {
   daysOfWeek!: string[]; // e.g., ["sunday", "friday"]
 
   @IsString()
-  @Matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, {
+  @Matches(/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/, {
     message: "startTime must be in HH:mm format",
   })
   startTime!: string;
 
   @IsString()
-  @Matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, {
+  @Matches(/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/, {
     message: "endTime must be in HH:mm format",
   })
   endTime!: string;
 
   @IsString()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
-    message: "startDate must be in YYYY-MM-DD format",
-  })
+  @Validate(DateYYYYMMDDConstraint)
   startDate!: string;
 
   @IsOptional()

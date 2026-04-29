@@ -107,10 +107,12 @@ export class BookingService {
           const matchingPlan = await membershipPlanRepository
             .createQueryBuilder("plan")
             .where("plan.field_id = :fieldId", { fieldId: slot.fieldId })
+            .andWhere("plan.user_id = :userId", { userId: user.id })
             .andWhere("plan.start_time = :startTime", {
               startTime: slot.startTime,
             })
             .andWhere("plan.end_time = :endTime", { endTime: slot.endTime })
+            .andWhere("plan.start_date <= :slotDate", { slotDate: slot.slotDate })
             .andWhere("plan.active = true")
             .getMany()
             .then((plans) =>

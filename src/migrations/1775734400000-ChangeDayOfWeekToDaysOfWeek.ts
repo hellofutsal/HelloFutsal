@@ -18,12 +18,25 @@ export class ChangeDayOfWeekToDaysOfWeek1775734400000 implements MigrationInterf
         `Invalid day_of_week value(s) found in membership_plans: ${invalid[0].invalids}`,
       );
     }
-    // 1. Add new column with default '' (simple-array expects string)
+    
+    // 1. Add backup column to preserve original values for rollback
+    await queryRunner.query(`
+      ALTER TABLE "membership_plans"
+      ADD COLUMN "previous_day_of_week_backup" integer;
+    `);
+    
+    // 2. Copy original day_of_week values to backup
+    await queryRunner.query(`
+      UPDATE "membership_plans" SET "previous_day_of_week_backup" = "day_of_week";
+    `);
+    
+    // 3. Add new column with default '' (simple-array expects string)
     await queryRunner.query(`
       ALTER TABLE "membership_plans"
       ADD COLUMN "days_of_week" text DEFAULT '';
     `);
-    // 2. Map day_of_week ints to weekday names for days_of_week
+    
+    // 4. Map day_of_week ints to weekday names for days_of_week
     await queryRunner.query(`
       UPDATE "membership_plans" SET "days_of_week" = CASE 
         WHEN "day_of_week" = 0 THEN 'sunday'
@@ -35,17 +48,20 @@ export class ChangeDayOfWeekToDaysOfWeek1775734400000 implements MigrationInterf
         WHEN "day_of_week" = 6 THEN 'saturday'
         ELSE '' END;
     `);
-    // 3. Set NOT NULL
+    
+    // 5. Set NOT NULL
     await queryRunner.query(`
       ALTER TABLE "membership_plans"
       ALTER COLUMN "days_of_week" SET NOT NULL;
     `);
-    // 4. Drop old column
+    
+    // 6. Drop old column
     await queryRunner.query(`
       ALTER TABLE "membership_plans"
       DROP COLUMN "day_of_week";
     `);
-    // 5. Drop default
+    
+    // 7. Drop default
     await queryRunner.query(`
       ALTER TABLE "membership_plans"
       ALTER COLUMN "days_of_week" DROP DEFAULT;
@@ -53,8 +69,33 @@ export class ChangeDayOfWeekToDaysOfWeek1775734400000 implements MigrationInterf
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    throw new Error(
-      "Irreversible migration: cannot safely restore day_of_week from days_of_week.",
-    );
+    // 1. Add back the original day_of_week column
+    await queryRunner.query(`
+      ALTER TABLE "membership_plans"
+      ADD COLUMN "day_of_week" integer;
+    `);
+    
+    // 2. Restore from backup
+    await queryRunner.query(`
+      UPDATE "membership_plans" SET "day_of_week" = "previous_day_of_week_backup";
+    `);
+    
+    // 3. Set NOT NULL for day_of_week
+    await queryRunner.query(`
+      ALTER TABLE "membership_plans"
+      ALTER COLUMN "day_of_week" SET NOT NULL;
+    `);
+    
+    // 4. Drop days_of_week column
+    await queryRunner.query(`
+      ALTER TABLE "membership_plans"
+      DROP COLUMN "days_of_week";
+    `);
+    
+    // 5. Drop backup column
+    await queryRunner.query(`
+      ALTER TABLE "membership_plans"
+      DROP COLUMN "previous_day_of_week_backup";
+    `);
   }
 }

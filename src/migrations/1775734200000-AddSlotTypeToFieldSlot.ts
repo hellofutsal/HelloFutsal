@@ -8,6 +8,11 @@ export class AddSlotTypeToFieldSlot1775734200000 implements MigrationInterface {
       ALTER TABLE "field_slots"
       ADD COLUMN "slot_type" varchar NOT NULL DEFAULT 'normal';
     `);
+    
+    await queryRunner.query(`
+      ALTER TABLE "field_slots"
+      ADD CONSTRAINT "chk_slot_type" CHECK (slot_type IN ('normal', 'membership'));
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

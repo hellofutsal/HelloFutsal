@@ -1,4 +1,4 @@
-import { Body, Controller, Post, ConflictException } from "@nestjs/common";
+import { Body, Controller, Post, ConflictException, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { MembershipPlan } from "./entities/membership-plan.entity";
@@ -7,6 +7,8 @@ import { UserAccount } from "../auth/entities/user.entity";
 import { Field } from "../fields/entities/field.entity";
 import { FieldSlot } from "../fields/entities/field-slot.entity";
 import { Booking } from "./entities/booking.entity";
+import { CurrentAccount } from "../auth/decorators/current-account.decorator";
+import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 
 @Controller("membership-plans")
 export class MembershipPlanController {
@@ -48,7 +50,10 @@ export class MembershipPlanController {
   }
 
   @Post()
-  async createMembershipPlan(@Body() dto: CreateMembershipPlanDto) {
+  async createMembershipPlan(
+    @Body() dto: CreateMembershipPlanDto,
+    @CurrentAccount() currentUser: AuthenticatedAccount,
+  ) {
     // Find or create user by phone number
     let user = await this.userRepo.findOne({
       where: { mobileNumber: dto.phoneNumber },
@@ -65,7 +70,14 @@ export class MembershipPlanController {
       user = await this.userRepo.save(user);
     }
 
-    const field = await this.fieldRepo.findOneByOrFail({ id: dto.fieldId });
+    // Verify field ownership before proceeding
+    const field = await this.fieldRepo.findOne({
+      where: { id: dto.fieldId, ownerId: currentUser.id },
+    });
+
+    if (!field) {
+      throw new NotFoundException(`Field with id ${dto.fieldId} not found or access denied`);
+    }
 
     // Check for existing membership plans with overlapping time ranges on the same field and days
     const existingPlans = await this.membershipPlanRepo.find({

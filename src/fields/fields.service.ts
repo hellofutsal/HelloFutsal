@@ -255,7 +255,7 @@ export class FieldsService {
 
     const existingSlotKeys = new Set(existingSlots);
     const slotsToCreate: Array<{ slotDate: string; startTime: string; endTime: string; price: string }> = [];
-    const slotsToImplement: Array<{ slotDate: string; startTime: string; endTime: string }> = [];
+    const slotsToImplement: Array<{ slotDate: string; startTime: string; endTime: string; price: string }> = [];
 
     normalizedSlots.forEach((slot) => {
       const slotKey = `${slot.slotDate} ${slot.startTime}`;
@@ -264,6 +264,7 @@ export class FieldsService {
           slotDate: slot.slotDate,
           startTime: slot.startTime,
           endTime: slot.endTime,
+          price: slot.price,
         });
       } else {
         slotsToCreate.push(slot);
@@ -1167,7 +1168,7 @@ export class FieldsService {
 
   private async implementExistingSlots(
     fieldId: string,
-    slots: Array<{ slotDate: string; startTime: string; endTime: string }>,
+    slots: Array<{ slotDate: string; startTime: string; endTime: string; price: string }>,
   ): Promise<void> {
     if (slots.length === 0) {
       return;
@@ -1178,18 +1179,41 @@ export class FieldsService {
         const repository = manager.getRepository(FieldSlot);
         
         for (const slot of slots) {
-          await repository.update(
-            {
+          // First check current slot state
+          const existingSlot = await repository.findOne({
+            where: {
               fieldId,
               slotDate: slot.slotDate,
               startTime: slot.startTime,
               endTime: slot.endTime,
             },
-            {
-              status: "available",
-              slotType: "normal",
-            },
-          );
+          });
+
+          if (!existingSlot) {
+            continue; // Skip if slot doesn't exist
+          }
+
+          // Only change slots that are genuinely inactive (blocked or cancelled)
+          if ((existingSlot.status === "blocked" || existingSlot.status === "cancelled") && existingSlot.slotType !== "membership") {
+            await repository.update(
+              {
+                fieldId,
+                slotDate: slot.slotDate,
+                startTime: slot.startTime,
+                endTime: slot.endTime,
+              },
+              {
+                status: "available",
+                slotType: "normal",
+                price: slot.price,
+              },
+            );
+          } else if (existingSlot.status !== "blocked" && existingSlot.status !== "cancelled") {
+            // Throw error when slot is already reserved/booked/membership
+            throw new ConflictException(
+              `Cannot reopen slot ${slot.slotDate} ${slot.startTime}-${slot.endTime}: slot is already ${existingSlot.status} with type ${existingSlot.slotType}`
+            );
+          }
         }
       },
     );
