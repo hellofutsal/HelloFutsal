@@ -1,4 +1,4 @@
-import { ValidationPipe, Controller, Get } from "@nestjs/common";
+import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./shared/filters/api-exception.filter";
