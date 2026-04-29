@@ -1,4 +1,4 @@
-import { ValidationPipe } from "@nestjs/common";
+import { ValidationPipe, Controller, Get } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./shared/filters/api-exception.filter";
@@ -20,6 +20,12 @@ async function bootstrap(): Promise<void> {
     new ApiResponseInterceptor(),
   );
   app.useGlobalFilters(new ApiExceptionFilter());
+
+  // Health check endpoint for Render
+  const express = require('express');
+  app.use('/health', (req: any, res: any) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
 
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);

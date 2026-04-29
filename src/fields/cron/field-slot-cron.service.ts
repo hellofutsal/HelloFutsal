@@ -136,7 +136,7 @@ export class FieldSlotCronService {
     for (const plan of plans) {
       if (!plan.field || !plan.user) continue;
       
-      this.logger.log(`Processing membership plan: User=${plan.user.name}, Field=${plan.field.fieldName}, Days=${plan.daysOfWeek}, Time=${plan.startTime}-${plan.endTime}, StartDate=${plan.startDate}`);
+      this.logger.log(`Processing membership plan: User=${plan.user.id}, Field=${plan.field.fieldName}, Days=${plan.daysOfWeek}, Time=${plan.startTime}-${plan.endTime}, StartDate=${plan.startDate}`);
       
       // Check each upcoming date for this membership plan
       for (const upcomingDate of upcomingDates) {
@@ -171,7 +171,7 @@ export class FieldSlotCronService {
         );
         
         if (conflictingPlans.length > 0) {
-          this.logger.warn(`Multiple membership plans conflict for ${upcomingDate} ${plan.startTime}-${plan.endTime}: ${conflictingPlans.map(p => p.user.name).join(', ')}. Skipping this slot.`);
+          this.logger.warn(`Multiple membership plans conflict for ${upcomingDate} ${plan.startTime}-${plan.endTime}: ${conflictingPlans.map(p => p.user.id).join(', ')}. Skipping this slot.`);
           membershipSkipped++;
           continue;
         }

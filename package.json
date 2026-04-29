@@ -10,10 +10,12 @@
     "db:reset:local": "sh ./scripts/reset-local-db.sh",
     "db:backup:prod": "PATH=\"/opt/homebrew/opt/libpq/bin:/usr/local/opt/libpq/bin:$PATH\" sh ./scripts/backup-prod-db.sh",
     "db:reset:prod": "PATH=\"/opt/homebrew/opt/libpq/bin:/usr/local/opt/libpq/bin:$PATH\" sh ./scripts/reset-prod-db.sh",
-    "typeorm": "node -r ts-node/register ./node_modules/typeorm/cli.js -d src/data-source.ts",
+"typeorm": "node ./node_modules/typeorm/cli.js -d dist/data-source.js",
     "migration:generate": "sh -c 'npm run typeorm -- migration:generate src/migrations/$1' --",
     "migration:run": "npm run typeorm -- migration:run",
-    "migration:revert": "npm run typeorm -- migration:revert"
+    "migration:revert": "npm run typeorm -- migration:revert",
+    "migration:render": "sh ./scripts/render-migration.sh",
+    "migration:manual": "sh ./scripts/conditional-migration.sh"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.8",
