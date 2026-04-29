@@ -22,7 +22,6 @@ async function bootstrap(): Promise<void> {
   app.useGlobalFilters(new ApiExceptionFilter());
 
   // Health check endpoint for Render
-  const express = require('express');
   app.use('/health', (req: any, res: any) => {
     res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
   });
