@@ -13,6 +13,7 @@ import { Field } from "../../fields/entities/field.entity";
 import { FieldSlot } from "../../fields/entities/field-slot.entity";
 
 export type BookingStatus = "booked" | "completed" | "cancelled";
+export type BookingType = "normal" | "membership";
 
 @Entity({ name: "bookings" })
 @Index(["fieldId"])
@@ -51,6 +52,9 @@ export class Booking {
 
   @Column({ name: "status", type: "varchar", default: "booked" })
   status!: BookingStatus;
+
+  @Column({ name: "booking_type", type: "varchar", default: "normal" })
+  bookingType!: BookingType;
 
   @Column({
     name: "extra_amount",

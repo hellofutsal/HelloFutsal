@@ -5,6 +5,9 @@ import { Repository } from "typeorm";
 import { Field } from "../entities/field.entity";
 import { FieldSlotGenerator } from "./field-slot-generator";
 import { FieldSlotSyncService } from "./field-slot-sync.service";
+import { MembershipPlan } from "../../booking/entities/membership-plan.entity";
+import { Booking } from "../../booking/entities/booking.entity";
+import { FieldSlot } from "../entities/field-slot.entity";
 
 @Injectable()
 export class FieldSlotCronService {
@@ -14,10 +17,46 @@ export class FieldSlotCronService {
     @InjectRepository(Field)
     private readonly fieldsRepository: Repository<Field>,
     private readonly fieldSlotSyncService: FieldSlotSyncService,
+    @InjectRepository(MembershipPlan)
+    private readonly membershipPlanRepo: Repository<MembershipPlan>,
+    @InjectRepository(FieldSlot)
+    private readonly fieldSlotRepo: Repository<FieldSlot>,
+    @InjectRepository(Booking)
+    private readonly bookingRepo: Repository<Booking>,
   ) {}
 
+  /**
+   * Helper method to check if two time ranges overlap
+   */
+  private timeRangesOverlap(start1: string, end1: string, start2: string, end2: string): boolean {
+    const start1Minutes = this.parseTimeToMinutes(start1);
+    const end1Minutes = this.parseTimeToMinutes(end1);
+    const start2Minutes = this.parseTimeToMinutes(start2);
+    const end2Minutes = this.parseTimeToMinutes(end2);
+
+    return (start1Minutes < end2Minutes && end1Minutes > start2Minutes) ||
+           (start2Minutes < end1Minutes && end2Minutes > start1Minutes);
+  }
+
+  /**
+   * Parses time string to minutes for comparison
+   */
+  private parseTimeToMinutes(time: string): number {
+    const [hoursText, minutesText] = time.trim().split(":");
+    const hours = Number(hoursText);
+    const minutes = Number(minutesText);
+
+    if (Number.isNaN(hours) || Number.isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      throw new Error("Invalid time format");
+    }
+
+    return hours * 60 + minutes;
+  }
+
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
-  async generateTomorrowSlotsFromRuleBooks(): Promise<void> {
+  // @Cron("*/1 * * * *")
+  async generateTomorrowSlotsAndBookMemberships(): Promise<void> {
+    // 1. Roll/Create slots as before
     const fields = await this.fieldsRepository.find({
       where: { isActive: true },
       relations: { scheduleSettings: true, ruleBooks: true },
@@ -56,7 +95,280 @@ export class FieldSlotCronService {
     }
 
     this.logger.log(
-      `Midnight slot cron finished. Processed=${processedCount}, Failed=${failedCount}`,
+      `Midnight slot-roll phase finished. Processed=${processedCount}, Failed=${failedCount}`,
+    );
+
+    // 2. Book membership slots for upcoming week with enhanced validation
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const dayNames = [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+    ];
+    const todayDayName = dayNames[dayOfWeek];
+    
+    // We need to check and book slots for the next 30 days to cover membership bookings
+    const upcomingDates: string[] = [];
+    for (let i = 1; i <= 30; i++) {
+      const futureDate = new Date(today);
+      futureDate.setDate(today.getDate() + i);
+      const dateStr = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, "0")}-${String(futureDate.getDate()).padStart(2, "0")}`;
+      upcomingDates.push(dateStr);
+    }
+
+    const plans = await this.membershipPlanRepo.find({
+      where: { active: true },
+      relations: ["field", "user"],
+    });
+    
+    this.logger.log(`Found ${plans.length} active membership plans`);
+    this.logger.log(`Upcoming dates to check: ${upcomingDates.join(', ')}`);
+    
+    let membershipProcessed = 0;
+    let membershipSkipped = 0;
+    let membershipCreated = 0;
+    
+    for (const plan of plans) {
+      if (!plan.field || !plan.user) continue;
+      
+      this.logger.log(`Processing membership plan: User=${plan.user.name}, Field=${plan.field.fieldName}, Days=${plan.daysOfWeek}, Time=${plan.startTime}-${plan.endTime}, StartDate=${plan.startDate}`);
+      
+      // Check each upcoming date for this membership plan
+      for (const upcomingDate of upcomingDates) {
+        // Get day name for this upcoming date (parse as local time to match BookingService.getDayName())
+        const [year, month, day] = upcomingDate.split('-').map(Number);
+        const upcomingDateObj = new Date(year, month - 1, day);
+        const upcomingDayName = dayNames[upcomingDateObj.getDay()];
+        
+        this.logger.log(`Checking date ${upcomingDate} (${upcomingDayName}) against plan days: ${plan.daysOfWeek.join(', ')}`);
+        
+        // Check if this day is in the membership plan's days
+        if (!plan.daysOfWeek.includes(upcomingDayName)) {
+          this.logger.log(`Skipping ${upcomingDate} - day ${upcomingDayName} not in plan days`);
+          continue;
+        }
+        
+        // Check if the upcoming date is on or after the membership start date
+        if (upcomingDate < plan.startDate) {
+          this.logger.log(`Skipping ${upcomingDate} - date is before membership start date ${plan.startDate}`);
+          continue;
+        }
+        
+        this.logger.log(`Found matching date ${upcomingDate} (${upcomingDayName}) - attempting to book slot for field ${plan.field.id} at ${plan.startTime}-${plan.endTime}`);
+        
+        // Check if there are other membership plans that might conflict with this slot
+        const conflictingPlans = plans.filter(otherPlan => 
+          otherPlan.id !== plan.id &&
+          otherPlan.field.id === plan.field.id &&
+          otherPlan.daysOfWeek.includes(upcomingDayName) &&
+          otherPlan.startDate <= upcomingDate &&
+          this.timeRangesOverlap(plan.startTime, plan.endTime, otherPlan.startTime, otherPlan.endTime)
+        );
+        
+        if (conflictingPlans.length > 0) {
+          this.logger.warn(`Multiple membership plans conflict for ${upcomingDate} ${plan.startTime}-${plan.endTime}: ${conflictingPlans.map(p => p.user.name).join(', ')}. Skipping this slot.`);
+          membershipSkipped++;
+          continue;
+        }
+        
+        try {
+          const booked = await this.fieldSlotRepo.manager.transaction(
+            async (manager) => {
+              // First check if slot exists and get its current status
+              const existingSlot = await manager
+                .getRepository(FieldSlot)
+                .createQueryBuilder("slot")
+                .where("slot.field_id = :fieldId", { fieldId: plan.field.id })
+                .andWhere("slot.slot_date = :slotDate", { slotDate: upcomingDate })
+                .andWhere("slot.start_time = :startTime", {
+                  startTime: plan.startTime,
+                })
+                .andWhere("slot.end_time = :endTime", { endTime: plan.endTime })
+                .getOne();
+
+              this.logger.log(`Slot search result for ${upcomingDate} ${plan.startTime}-${plan.endTime}:`, existingSlot ? {
+                id: existingSlot.id,
+                status: existingSlot.status,
+                slotType: existingSlot.slotType,
+                price: existingSlot.price
+              } : 'NOT FOUND');
+
+              if (!existingSlot) {
+                this.logger.warn(
+                  `Slot not found for membership user ${plan.user.id} on field ${plan.field.id} at ${plan.startTime} for date ${upcomingDate}`,
+                );
+                return false;
+              }
+
+              // Check if slot is already booked for membership type
+              if (existingSlot.slotType === "membership" && existingSlot.status === "booked") {
+                const existingBooking = await manager
+                  .getRepository(Booking)
+                  .createQueryBuilder("booking")
+                  .where("booking.slot_id = :slotId", { slotId: existingSlot.id })
+                  .andWhere("booking.booking_type = :bookingType", { bookingType: "membership" })
+                  .getOne();
+
+                if (existingBooking) {
+                  this.logger.log(
+                    `Slot ${existingSlot.id} already booked for membership user ${existingBooking.userId} on field ${plan.field.id}`,
+                  );
+                  return false;
+                }
+              }
+
+              // Get slot with pessimistic lock for update
+              const slot = await manager
+                .getRepository(FieldSlot)
+                .createQueryBuilder("slot")
+                .where("slot.field_id = :fieldId", { fieldId: plan.field.id })
+                .andWhere("slot.slot_date = :slotDate", { slotDate: upcomingDate })
+                .andWhere("slot.start_time = :startTime", {
+                  startTime: plan.startTime,
+                })
+                .andWhere("slot.end_time = :endTime", { endTime: plan.endTime })
+                .setLock("pessimistic_write")
+                .getOne();
+
+              if (!slot) return false;
+
+              // Calculate per-day price from monthlyPrice if set
+              if (plan.monthlyPrice) {
+                const perDayPrice = (parseFloat(plan.monthlyPrice) / 30).toFixed(2);
+                slot.price = perDayPrice;
+              }
+
+              // If slot is booked for non-membership, override it with membership booking
+              if (slot.status === "booked" && slot.slotType !== "membership") {
+                this.logger.log(
+                  `Overriding non-membership booking for slot ${slot.id} with membership booking for user ${plan.user.id} on field ${plan.field.id}`,
+                );
+                
+                // Update slot to membership type and price
+                slot.status = "booked";
+                slot.slotType = "membership";
+                
+                // Update existing booking to membership type
+                const existingBooking = await manager
+                  .getRepository(Booking)
+                  .createQueryBuilder("booking")
+                  .where("booking.slot_id = :slotId", { slotId: slot.id })
+                  .getOne();
+                  
+                if (existingBooking) {
+                  existingBooking.userId = plan.user.id;
+                  existingBooking.bookingType = "membership";
+                  existingBooking.extraAmount = "0";
+                  await manager.save(Booking, existingBooking);
+                }
+                
+                await manager.save(FieldSlot, slot);
+                return {
+                  slotId: slot.id,
+                  userId: plan.user.id,
+                  fieldId: plan.field.id,
+                  date: upcomingDate,
+                  action: "overridden",
+                };
+              }
+
+              // Check existing booking for this slot
+              let booking = await manager
+                .getRepository(Booking)
+                .createQueryBuilder("booking")
+                .where("booking.slot_id = :slotId", { slotId: slot.id })
+                .getOne();
+
+              if (booking) {
+                // If already booked for this user as membership, update slot price and type
+                if (
+                  booking.userId === plan.user.id &&
+                  booking.bookingType === "membership"
+                ) {
+                  slot.status = "booked";
+                  slot.slotType = "membership";
+                  await manager.save(FieldSlot, slot);
+                  return {
+                    slotId: slot.id,
+                    userId: plan.user.id,
+                    fieldId: plan.field.id,
+                    date: upcomingDate,
+                    action: "updated",
+                  };
+                }
+                // Otherwise, skip (already booked by someone else)
+                return false;
+              }
+
+              // If slot is available, book it for membership
+              slot.status = "booked";
+              slot.slotType = "membership";
+              await manager.save(FieldSlot, slot);
+              
+              booking = this.bookingRepo.create({
+                fieldId: plan.field.id,
+                slotId: slot.id,
+                userId: plan.user.id,
+                status: "booked",
+                extraAmount: "0",
+                bookingType: "membership",
+              });
+              await manager.save(Booking, booking);
+              
+              return {
+                slotId: slot.id,
+                userId: plan.user.id,
+                fieldId: plan.field.id,
+                date: upcomingDate,
+                action: "created",
+              };
+            },
+          );
+          
+          if (booked) {
+            if (booked.action === "created") {
+              membershipCreated++;
+            } else if (booked.action === "overridden") {
+              membershipProcessed++;
+            } else {
+              membershipProcessed++;
+            }
+            this.logger.log(
+              `${booked.action === 'updated' ? 'Updated' : booked.action === 'overridden' ? 'Overridden' : 'Created'} membership booking for slot ${booked.slotId} user ${booked.userId} on field ${booked.fieldId} for date ${booked.date}`,
+            );
+          } else {
+            membershipSkipped++;
+          }
+        } catch (error) {
+          membershipSkipped++;
+          // Handle unique constraint violation or log error
+          if (
+            error &&
+            typeof error === "object" &&
+            "code" in error &&
+            (error.code === "23505" || error.code === "SQLITE_CONSTRAINT")
+          ) {
+            this.logger.warn(
+              `Slot already booked for membership user ${plan.user.id} on field ${plan.field.id} at ${plan.startTime} for date ${upcomingDate}`,
+            );
+          } else {
+            this.logger.error(
+              `Failed to book slot for membership user ${plan.user.id} on field ${plan.field.id} at ${plan.startTime} for date ${upcomingDate}: ${error instanceof Error ? error.stack : String(error)}`,
+            );
+          }
+        }
+      }
+    }
+    this.logger.log(
+      `Membership slot booking finished. Created=${membershipCreated}, Updated=${membershipProcessed}, Skipped=${membershipSkipped}`,
+    );
+    this.logger.log(
+      `Midnight slot cron finished. SlotRollProcessed=${processedCount}, SlotRollFailed=${failedCount}, MembershipCreated=${membershipCreated}, MembershipUpdated=${membershipProcessed}, MembershipSkipped=${membershipSkipped}`,
     );
   }
 }
