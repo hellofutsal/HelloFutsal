@@ -1,0 +1,30 @@
+meta {
+  name: SendNotificationWithCustomData
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://localhost:3000/notifications
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer YOUR_JWT_TOKEN
+}
+
+body:json {
+  {
+    "title": "Membership Created!",
+    "body": "Your membership plan has been successfully created.",
+    "type": "membership_created",
+    "userId": "USER_ID_HERE",
+    "data": {
+      "type": "membership",
+      "membershipId": "12345",
+      "fieldId": "67890"
+    }
+  }
+}

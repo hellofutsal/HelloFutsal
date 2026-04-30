@@ -1,0 +1,25 @@
+meta {
+  name: SendNotificationToSpecifcFCMToken
+  type: http
+  seq: 3
+}
+
+post {
+  url: http://localhost:3000/notifications
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer YOUR_JWT_TOKEN
+}
+
+body:json {
+  {
+    "title": "Payment Successful!",
+    "body": "Your payment of $1200.00 has been processed successfully.",
+    "type": "payment_success",
+    "fcmToken": "SPECIFIC_DEVICE_TOKEN_HERE"
+  }
+}

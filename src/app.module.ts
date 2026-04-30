@@ -15,6 +15,9 @@ import { FieldScheduleSettings } from "./fields/entities/field-schedule-settings
 import { FieldSlot } from "./fields/entities/field-slot.entity";
 import { FieldsModule } from "./fields/fields.module";
 import { KeepAliveModule } from "./keep-alive/keep-alive.module";
+import { NotificationsModule } from "./notifications/notifications.module";
+import { Notification } from "./notifications/entities/notification.entity";
+import { FcmToken } from "./notifications/entities/fcm-token.entity";
 import { AppController } from "./app.controller";
 
 function resolveSslConfig(configService: ConfigService, sslMode: string) {
@@ -128,6 +131,8 @@ function getDatabaseConfig(configService: ConfigService) {
             FieldScheduleSettings,
             FieldRuleBook,
             FieldSlot,
+            Notification,
+            FcmToken,
           ],
           autoLoadEntities: true,
           migrations: [join(__dirname, "migrations", "*{.ts,.js}")],
@@ -142,6 +147,7 @@ function getDatabaseConfig(configService: ConfigService) {
     BookingModule,
     FieldsModule,
     KeepAliveModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
 })

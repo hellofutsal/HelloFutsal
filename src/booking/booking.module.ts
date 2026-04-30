@@ -9,6 +9,7 @@ import { BookingService } from "./booking.service";
 import { MembershipPlanController } from "./membership-plan.controller";
 import { BookingRevenueModule } from "./revenue/booking-revenue.module";
 import { Field } from "../fields/entities/field.entity";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { Field } from "../fields/entities/field.entity";
       Field,
     ]),
     BookingRevenueModule,
+    NotificationsModule,
   ],
   controllers: [BookingController, MembershipPlanController],
   providers: [BookingService],

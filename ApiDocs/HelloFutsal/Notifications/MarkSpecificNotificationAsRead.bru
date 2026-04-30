@@ -1,0 +1,15 @@
+meta {
+  name: MarkSpecificNotificationAsRead
+  type: http
+  seq: 6
+}
+
+put {
+  url: http://localhost:3000/notifications/12345/read
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer YOUR_JWT_TOKEN
+}

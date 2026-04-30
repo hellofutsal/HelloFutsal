@@ -1,0 +1,24 @@
+meta {
+  name: RegisterFCMToken
+  type: http
+  seq: 4
+}
+
+post {
+  url: http://localhost:3000/notifications/register-token
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer YOUR_JWT_TOKEN
+}
+
+body:json {
+  {
+    "token": "dRx2l7Q7Z4X8yK9:APA91bF1L2p3v5v2X9a8e9l7K3q4X0yW2j5F6h7",
+    "deviceType": "android",
+    "deviceInfo": "Samsung Galaxy S21 - Chrome Mobile"
+  }
+}
