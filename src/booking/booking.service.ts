@@ -136,7 +136,7 @@ export class BookingService {
               userId: user.id,
               status: "booked",
               bookingType,
-              extraAmount: this.formatAmount(0),
+              totalAmount: this.formatAmount(0),
             }),
           );
 
@@ -152,8 +152,7 @@ export class BookingService {
               status: booking.status,
               bookingType: booking.bookingType,
               baseAmount: this.formatAmount(slot.price),
-              extraAmount: this.formatAmount(booking.extraAmount),
-              totalAmount: this.sumAmounts(slot.price, booking.extraAmount),
+              totalAmount: this.sumAmounts(slot.price, booking.totalAmount),
             },
             slot: {
               id: slot.id,
@@ -231,8 +230,26 @@ export class BookingService {
         throw new NotFoundException("Slot not found");
       }
 
-      booking.extraAmount = this.formatAmount(
-        confirmBookingDto.extraAmount ?? 0,
+      const baseAmount = Number(slot.price);
+      const totalAmount = Number(confirmBookingDto.totalAmount ?? 0);
+
+      // Validate discount logic
+      if (!confirmBookingDto.discount && totalAmount < baseAmount) {
+        throw new ConflictException(
+          "Total amount cannot be less than base amount. Please toggle on the discount button to apply discount.",
+        );
+      }
+
+      if (confirmBookingDto.discount && totalAmount >= baseAmount) {
+        throw new ConflictException(
+          "When discount is enabled, total amount should be less than base amount.",
+        );
+      }
+
+      booking.discount = confirmBookingDto.discount ?? false;
+      booking.baseAmount = this.formatAmount(slot.price);
+      booking.totalAmount = this.formatAmount(
+        confirmBookingDto.totalAmount ?? 0,
       );
       booking.status = "completed";
       await bookingRepository.save(booking);
@@ -248,9 +265,9 @@ export class BookingService {
           userId: booking.userId,
           status: booking.status,
           bookingType: booking.bookingType,
-          baseAmount: this.formatAmount(slot.price),
-          extraAmount: this.formatAmount(booking.extraAmount),
-          totalAmount: this.sumAmounts(slot.price, booking.extraAmount),
+          discount: booking.discount,
+          baseAmount: booking.baseAmount,
+          totalAmount: this.sumAmounts(booking.baseAmount, booking.totalAmount),
         },
         slot: {
           id: slot.id,
@@ -298,9 +315,9 @@ export class BookingService {
         id: booking.id,
         status: booking.status,
         bookingType: booking.bookingType,
-        baseAmount: this.formatAmount(booking.slot.price),
-        extraAmount: this.formatAmount(booking.extraAmount),
-        totalAmount: this.sumAmounts(booking.slot.price, booking.extraAmount),
+        discount: booking.discount,
+        baseAmount: booking.baseAmount,
+        totalAmount: this.sumAmounts(booking.baseAmount, booking.totalAmount),
         createdAt: booking.createdAt,
         updatedAt: booking.updatedAt,
       },
@@ -399,9 +416,9 @@ export class BookingService {
 
   private sumAmounts(
     baseAmount: string | number | null | undefined,
-    extraAmount: string | number | null | undefined,
+    totalAmount: string | number | null | undefined,
   ): string {
-    const total = this.parseAmount(baseAmount) + this.parseAmount(extraAmount);
+    const total = this.parseAmount(baseAmount) + this.parseAmount(totalAmount);
     return total.toFixed(2);
   }
 }

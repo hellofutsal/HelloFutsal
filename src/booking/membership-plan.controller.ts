@@ -205,7 +205,7 @@ export class MembershipPlanController {
             slotId: slot.id,
             userId: user!.id,
             status: "booked",
-            extraAmount: "0",
+            totalAmount: "0",
             bookingType: "membership",
           });
           await manager.save(Booking, booking);

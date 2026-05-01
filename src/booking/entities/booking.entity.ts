@@ -56,14 +56,26 @@ export class Booking {
   @Column({ name: "booking_type", type: "varchar", default: "normal" })
   bookingType!: BookingType;
 
+  @Column({ name: "discount", type: "boolean", default: false })
+  discount!: boolean;
+
   @Column({
-    name: "extra_amount",
+    name: "base_amount",
     type: "numeric",
     precision: 12,
     scale: 2,
     default: 0,
   })
-  extraAmount!: string;
+  baseAmount!: string;
+
+  @Column({
+    name: "total_amount",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  totalAmount!: string;
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;

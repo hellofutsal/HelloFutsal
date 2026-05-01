@@ -73,7 +73,7 @@ export class BookingRevenueService {
     const totalRevenueRaw = await baseQuery
       .clone()
       .select(
-        "COALESCE(SUM(slot.price::numeric + booking.extra_amount::numeric), 0)",
+        "COALESCE(SUM(booking.base_amount::numeric + booking.total_amount::numeric), 0)",
         "revenue",
       )
       .getRawOne<{ revenue: string }>();
@@ -88,7 +88,7 @@ export class BookingRevenueService {
           endDate: query.endDate,
         })
         .select(
-          "COALESCE(SUM(slot.price::numeric + booking.extra_amount::numeric), 0)",
+          "COALESCE(SUM(booking.base_amount::numeric + booking.total_amount::numeric), 0)",
           "revenue",
         )
         .getRawOne<{ revenue: string }>();
@@ -220,12 +220,12 @@ export class BookingRevenueService {
     }
 
     const totalRevenue = bookings.reduce((sum, booking) => {
-      const price = Number(booking.slot.price);
-      const extraAmount = Number(booking.extraAmount);
-      const safePrice = Number.isNaN(price) ? 0 : price;
-      const safeExtraAmount = Number.isNaN(extraAmount) ? 0 : extraAmount;
+      const baseAmount = Number(booking.baseAmount);
+      const totalAmount = Number(booking.totalAmount);
+      const safeBaseAmount = Number.isNaN(baseAmount) ? 0 : baseAmount;
+      const safeTotalAmount = Number.isNaN(totalAmount) ? 0 : totalAmount;
 
-      return sum + safePrice + safeExtraAmount;
+      return sum + safeBaseAmount + safeTotalAmount;
     }, 0);
 
     const buffer = await this.createMonthlyBookingsPdfBuffer({
@@ -460,19 +460,19 @@ export class BookingRevenueService {
       } else {
         details.bookings.forEach((booking, index) => {
           ensureSpace();
-          const price = Number(booking.slot.price);
-          const extraAmount = Number(booking.extraAmount);
-          const safePrice = Number.isNaN(price) ? 0 : price;
-          const safeExtraAmount = Number.isNaN(extraAmount) ? 0 : extraAmount;
+          const baseAmount = Number(booking.baseAmount);
+          const totalAmount = Number(booking.totalAmount);
+          const safeBaseAmount = Number.isNaN(baseAmount) ? 0 : baseAmount;
+          const safeTotalAmount = Number.isNaN(totalAmount) ? 0 : totalAmount;
           drawRow([
             String(index + 1),
             booking.id,
             `${booking.user.name ?? "Unknown"}\n${booking.user.mobileNumber ?? "Unknown"}`,
             booking.slot.slotDate,
             `${booking.slot.startTime} - ${booking.slot.endTime}`,
-            formatAmount(safePrice),
-            formatAmount(safeExtraAmount),
-            formatAmount(safePrice + safeExtraAmount),
+            formatAmount(safeBaseAmount),
+            formatAmount(safeTotalAmount),
+            formatAmount(safeBaseAmount + safeTotalAmount),
             booking.status,
           ]);
         });
