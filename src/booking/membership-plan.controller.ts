@@ -1,4 +1,4 @@
-import { Body, Controller, Post, ConflictException, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { Body, Controller, Post, ConflictException, NotFoundException, ForbiddenException, UseGuards } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { MembershipPlan } from "./entities/membership-plan.entity";
@@ -8,6 +8,7 @@ import { Field } from "../fields/entities/field.entity";
 import { FieldSlot } from "../fields/entities/field-slot.entity";
 import { Booking } from "./entities/booking.entity";
 import { CurrentAccount } from "../auth/decorators/current-account.decorator";
+import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 
 @Controller("membership-plans")
@@ -50,6 +51,7 @@ export class MembershipPlanController {
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard)
   async createMembershipPlan(
     @Body() dto: CreateMembershipPlanDto,
     @CurrentAccount() currentUser: AuthenticatedAccount,
