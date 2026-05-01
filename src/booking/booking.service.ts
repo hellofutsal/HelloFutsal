@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+// ...existing code...
 import { InjectRepository } from "@nestjs/typeorm";
 import { QueryFailedError, Repository } from "typeorm";
 import { GroundOwnerAccount } from "../auth/entities/ground-owner.entity";
@@ -28,6 +29,49 @@ export class BookingService {
     @InjectRepository(MembershipPlan)
     private readonly membershipPlanRepository: Repository<MembershipPlan>,
   ) {}
+
+  async blockSlot(account: AuthenticatedAccount, slotId: string) {
+    this.ensureAdmin(account);
+
+    return this.fieldSlotsRepository.manager.transaction(async (manager) => {
+      const slotRepository = manager.getRepository(FieldSlot);
+      const slot = await slotRepository
+        .createQueryBuilder("slot")
+        .innerJoinAndSelect("slot.field", "field")
+        .where("slot.id = :slotId", { slotId })
+        .andWhere("field.owner_id = :ownerId", { ownerId: account.id })
+        .setLock("pessimistic_write")
+        .getOne();
+
+      if (!slot) {
+        throw new NotFoundException("Slot not found");
+      }
+
+      // Only allow blocking if slot is available
+      if (slot.status !== "available") {
+        throw new ConflictException(
+          `Slot is not available for blocking (current status: ${slot.status})`,
+        );
+      }
+
+      slot.status = "blocked";
+      await slotRepository.save(slot);
+
+      const result = {
+        slot: {
+          id: slot.id,
+          fieldId: slot.fieldId,
+          slotDate: slot.slotDate,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          status: slot.status,
+          price: this.formatAmount(slot.price),
+        },
+        message: "Slot blocked successfully",
+      };
+      return result;
+    });
+  }
 
   async createBooking(
     account: AuthenticatedAccount,
