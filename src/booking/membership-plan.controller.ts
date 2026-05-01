@@ -87,7 +87,7 @@ export class MembershipPlanController {
       const existingPlans = await manager
         .getRepository(MembershipPlan)
         .createQueryBuilder("plan")
-        .leftJoinAndSelect("plan.field", "field")
+        .innerJoinAndSelect("plan.field", "field")
         .where("plan.field.id = :fieldId", { fieldId: dto.fieldId })
         .andWhere("plan.active = :active", { active: true })
         .setLock("pessimistic_write")
