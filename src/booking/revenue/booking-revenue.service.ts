@@ -73,12 +73,17 @@ export class BookingRevenueService {
     const totalRevenueRaw = await baseQuery
       .clone()
       .select(
-        "COALESCE(SUM(booking.base_amount::numeric + booking.total_amount::numeric), 0)",
-        "revenue",
+        "COALESCE(SUM(booking.base_amount::numeric), 0)",
+        "totalBaseAmount",
       )
-      .getRawOne<{ revenue: string }>();
+      .addSelect(
+        "COALESCE(SUM(booking.total_amount::numeric), 0)",
+        "totalAmount",
+      )
+      .getRawOne<{ totalBaseAmount: string; totalAmount: string }>();
 
-    let selectedPeriodRevenue = totalRevenueRaw?.revenue ?? "0";
+    let selectedPeriodRevenue = totalRevenueRaw?.totalAmount ?? "0";
+    let selectedPeriodBaseAmount = totalRevenueRaw?.totalBaseAmount ?? "0";
 
     if (query.startDate && query.endDate) {
       const selectedRevenueRaw = await baseQuery
@@ -88,12 +93,17 @@ export class BookingRevenueService {
           endDate: query.endDate,
         })
         .select(
-          "COALESCE(SUM(booking.base_amount::numeric + booking.total_amount::numeric), 0)",
-          "revenue",
+          "COALESCE(SUM(booking.base_amount::numeric), 0)",
+          "totalBaseAmount",
         )
-        .getRawOne<{ revenue: string }>();
+        .addSelect(
+          "COALESCE(SUM(booking.total_amount::numeric), 0)",
+          "totalAmount",
+        )
+        .getRawOne<{ totalBaseAmount: string; totalAmount: string }>();
 
-      selectedPeriodRevenue = selectedRevenueRaw?.revenue ?? "0";
+      selectedPeriodRevenue = selectedRevenueRaw?.totalAmount ?? "0";
+      selectedPeriodBaseAmount = selectedRevenueRaw?.totalBaseAmount ?? "0";
     }
 
     // ── Slot stats for the selected date range ──────────────────────────────
@@ -142,7 +152,10 @@ export class BookingRevenueService {
 
     return {
       fieldId,
-      totalRevenueTillNow: totalRevenueRaw?.revenue ?? "0",
+      totalBaseAmountTillNow: totalRevenueRaw?.totalBaseAmount ?? "0",
+      totalAmountTillNow: totalRevenueRaw?.totalAmount ?? "0",
+      totalRevenueTillNow: totalRevenueRaw?.totalAmount ?? "0",
+      selectedPeriodBaseAmount,
       selectedPeriodRevenue,
       dateRange:
         query.startDate && query.endDate

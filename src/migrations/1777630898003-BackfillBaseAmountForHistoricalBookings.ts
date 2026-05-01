@@ -2,12 +2,12 @@ import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class BackfillBaseAmountForHistoricalBookings1777630898003 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Backfill base_amount for existing bookings by joining with slots table
+    // Backfill base_amount for existing bookings by joining with field_slots table
     await queryRunner.query(`
       UPDATE bookings 
-      SET base_amount = slots.price::numeric
-      FROM slots
-      WHERE bookings.slot_id = slots.id 
+      SET base_amount = field_slots.price::numeric
+      FROM field_slots
+      WHERE bookings.slot_id = field_slots.id 
         AND (bookings.base_amount IS NULL OR bookings.base_amount = 0)
         AND bookings.status = 'completed'
     `);
@@ -33,8 +33,8 @@ export class BackfillBaseAmountForHistoricalBookings1777630898003 implements Mig
         AND id IN (
           SELECT bookings.id 
           FROM bookings
-          INNER JOIN slots ON bookings.slot_id = slots.id
-          WHERE bookings.base_amount = slots.price::numeric
+          INNER JOIN field_slots ON bookings.slot_id = field_slots.id
+          WHERE bookings.base_amount = field_slots.price::numeric
             AND bookings.status = 'completed'
         )
     `);
