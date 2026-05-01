@@ -10,16 +10,17 @@ patch {
   auth: bearer
 }
 
-auth:bearer {
-  token: {{token}}
-}
-
 headers {
   Content-Type: application/json
 }
 
+auth:bearer {
+  token: {{token}}
+}
+
 body:json {
   {
-    "extraAmount": 150
+    "discount": true,
+    "totalAmount": 150
   }
 }

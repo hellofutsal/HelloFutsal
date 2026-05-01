@@ -319,7 +319,7 @@ export class FieldSlotCronService {
                 if (existingBooking) {
                   existingBooking.userId = plan.user.id;
                   existingBooking.bookingType = "membership";
-                  existingBooking.extraAmount = "0";
+                  existingBooking.totalAmount = "0";
                   await manager.save(Booking, existingBooking);
                 }
 
@@ -371,7 +371,7 @@ export class FieldSlotCronService {
                 slotId: slot.id,
                 userId: plan.user.id,
                 status: "booked",
-                extraAmount: "0",
+                totalAmount: "0",
                 bookingType: "membership",
               });
               await manager.save(Booking, booking);
