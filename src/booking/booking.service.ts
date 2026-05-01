@@ -267,7 +267,7 @@ export class BookingService {
           bookingType: booking.bookingType,
           discount: booking.discount,
           baseAmount: booking.baseAmount,
-          totalAmount: this.sumAmounts(booking.baseAmount, booking.totalAmount),
+          totalAmount: booking.totalAmount,
         },
         slot: {
           id: slot.id,
@@ -317,7 +317,7 @@ export class BookingService {
         bookingType: booking.bookingType,
         discount: booking.discount,
         baseAmount: booking.baseAmount,
-        totalAmount: this.sumAmounts(booking.baseAmount, booking.totalAmount),
+        totalAmount: booking.totalAmount,
         createdAt: booking.createdAt,
         updatedAt: booking.updatedAt,
       },
