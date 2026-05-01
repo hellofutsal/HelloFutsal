@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
+import { DateTime } from "luxon";
 import { Field } from "../entities/field.entity";
 import { FieldSlotGenerator } from "./field-slot-generator";
 import { FieldSlotSyncService } from "./field-slot-sync.service";
@@ -115,8 +116,10 @@ export class FieldSlotCronService {
     );
 
     // 2. Book membership slots for upcoming week with enhanced validation
-    const today = new Date();
-    const dayOfWeek = today.getDay();
+    // Use timezone-aware date in Nepal timezone
+    const nowInNepal = DateTime.now().setZone("Asia/Kathmandu");
+    const todayInNepal = nowInNepal.startOf("day");
+    const dayOfWeek = todayInNepal.weekday % 7; // Convert luxon weekday (1-7) to JS weekday (0-6)
     const dayNames = [
       "sunday",
       "monday",
@@ -131,9 +134,8 @@ export class FieldSlotCronService {
     // We need to check and book slots for the next 30 days to cover membership bookings
     const upcomingDates: string[] = [];
     for (let i = 1; i <= 30; i++) {
-      const futureDate = new Date(today);
-      futureDate.setDate(today.getDate() + i);
-      const dateStr = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, "0")}-${String(futureDate.getDate()).padStart(2, "0")}`;
+      const futureDateTime = todayInNepal.plus({ days: i });
+      const dateStr = futureDateTime.toFormat("yyyy-MM-dd");
       upcomingDates.push(dateStr);
     }
 
@@ -158,10 +160,11 @@ export class FieldSlotCronService {
 
       // Check each upcoming date for this membership plan
       for (const upcomingDate of upcomingDates) {
-        // Get day name for this upcoming date (parse as local time to match BookingService.getDayName())
-        const [year, month, day] = upcomingDate.split("-").map(Number);
-        const upcomingDateObj = new Date(year, month - 1, day);
-        const upcomingDayName = dayNames[upcomingDateObj.getDay()];
+        // Parse upcoming date in Nepal timezone to ensure correct day/weekday
+        const upcomingDateTime = DateTime.fromISO(upcomingDate, {
+          zone: "Asia/Kathmandu",
+        });
+        const upcomingDayName = dayNames[upcomingDateTime.weekday % 7 || 0];
 
         this.logger.log(
           `Checking date ${upcomingDate} (${upcomingDayName}) against plan days: ${plan.daysOfWeek.join(", ")}`,
@@ -191,6 +194,7 @@ export class FieldSlotCronService {
         const conflictingPlans = plans.filter(
           (otherPlan) =>
             otherPlan.id !== plan.id &&
+            otherPlan.field &&
             otherPlan.field.id === plan.field.id &&
             otherPlan.daysOfWeek.includes(upcomingDayName) &&
             otherPlan.startDate <= upcomingDate &&
@@ -204,7 +208,7 @@ export class FieldSlotCronService {
 
         if (conflictingPlans.length > 0) {
           this.logger.warn(
-            `Multiple membership plans conflict for ${upcomingDate} ${plan.startTime}-${plan.endTime}: ${conflictingPlans.map((p) => p.user.name).join(", ")}. Skipping this slot.`,
+            `Multiple membership plans conflict for ${upcomingDate} ${plan.startTime}-${plan.endTime}: ${conflictingPlans.map((p) => p.user?.name || "Unknown").join(", ")}. Skipping this slot.`,
           );
           membershipSkipped++;
           continue;
