@@ -560,7 +560,7 @@ export class FieldsService {
       normalizedSettings.openingTime,
       normalizedSettings.closingTime,
       normalizedSettings.slotDurationMin,
-      normalizedSettings.breakBetweenMin,
+      0,
       normalizedSettings.basePrice,
     );
 
@@ -692,7 +692,7 @@ export class FieldsService {
       normalizedSettings.openingTime,
       normalizedSettings.closingTime,
       normalizedSettings.slotDurationMin,
-      normalizedSettings.breakBetweenMin,
+      0,
       normalizedSettings.basePrice,
     );
 
