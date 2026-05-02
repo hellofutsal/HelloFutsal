@@ -261,29 +261,38 @@ export class MembershipPlanController {
 
             const slotDayName = dayNames[slotDateObj.getDay()];
 
-            // Find matching day schedule for this slot
-            const matchingDaySchedule = dto.daysOfWeek.find(
+            // Find ALL matching day schedules for this slot (same day can have multiple time windows)
+            const matchingDaySchedules = dto.daysOfWeek.filter(
               (sch) => sch.day === slotDayName,
             );
 
-            if (!matchingDaySchedule) {
+            if (matchingDaySchedules.length === 0) {
               // No matching day schedule for this slot
               continue;
             }
 
-            // Check if slot time matches the day's time window
+            // Check if slot time matches ANY of the day's time windows
             const slotStart = this.parseTimeToMinutes(slot.startTime);
             const slotEnd = this.parseTimeToMinutes(slot.endTime);
-            const scheduleStart = this.parseTimeToMinutes(
-              matchingDaySchedule.startTime,
-            );
-            const scheduleEnd = this.parseTimeToMinutes(
-              matchingDaySchedule.endTime,
-            );
 
-            // Slot must be within the day's time window
-            if (slotStart !== scheduleStart || slotEnd !== scheduleEnd) {
-              // Slot time doesn't match this day's schedule
+            // Find a matching schedule for this slot's time window
+            let matchingDaySchedule: MembershipDayScheduleDto | null = null;
+            for (const schedule of matchingDaySchedules) {
+              const scheduleStart = this.parseTimeToMinutes(schedule.startTime);
+              const scheduleEnd = this.parseTimeToMinutes(schedule.endTime);
+
+              if (slotStart === scheduleStart && slotEnd === scheduleEnd) {
+                // Also check that the slot date is on or after this schedule's start date
+                const slotDateStr = slot.slotDate;
+                if (slotDateStr >= schedule.startDate) {
+                  matchingDaySchedule = schedule;
+                  break;
+                }
+              }
+            }
+
+            if (!matchingDaySchedule) {
+              // No matching time window for this slot or slot is before schedule start date
               continue;
             }
 

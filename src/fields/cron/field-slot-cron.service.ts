@@ -188,16 +188,21 @@ export class FieldSlotCronService {
               return false;
 
             const otherSchedules = (otherPlan.daysOfWeek as any[]) || [];
-            return otherSchedules.some(
-              (s) =>
+            return otherSchedules.some((s) => {
+              // Skip schedules that start after the upcoming date
+              if (s.startDate && s.startDate > upcomingDate) {
+                return false;
+              }
+              return (
                 s.day === upcomingDayName &&
                 this.timeRangesOverlap(
                   daySchedule.startTime,
                   daySchedule.endTime,
                   s.startTime,
                   s.endTime,
-                ),
-            );
+                )
+              );
+            });
           });
 
           if (conflictingPlans.length > 0) {

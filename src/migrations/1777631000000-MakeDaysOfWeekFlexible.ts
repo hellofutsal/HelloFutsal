@@ -22,7 +22,7 @@ export class MakeDaysOfWeekFlexible1777631000000 implements MigrationInterface {
     `);
 
     // Transform days_of_week from simple-array (comma-separated string) to JSONB
-    // Each day string becomes {"day": "monday", "startTime": "08:00", "endTime": "09:00"}
+    // Each day string becomes {"day": "monday", "startTime": "08:00", "endTime": "09:00", "startDate": "...", "monthlyPrice": ...}
     await queryRunner.query(`
       UPDATE "membership_plans" 
       SET days_of_week = (
@@ -30,11 +30,15 @@ export class MakeDaysOfWeekFlexible1777631000000 implements MigrationInterface {
           jsonb_build_object(
             'day', day,
             'startTime', start_time,
-            'endTime', end_time
+            'endTime', end_time,
+            'startDate', start_date::text,
+            'monthlyPrice', monthly_price::text
           )
         )
         FROM (
-          SELECT unnest(string_to_array(days_of_week_old, ',')) as day
+          SELECT unnest(string_to_array(mp.days_of_week_old, ',')) as day, mp.start_time, mp.end_time, mp.start_date, mp.monthly_price
+          FROM membership_plans mp
+          WHERE mp.id = "membership_plans".id AND mp.days_of_week_old IS NOT NULL
         ) AS days
       )
       WHERE days_of_week_old IS NOT NULL;

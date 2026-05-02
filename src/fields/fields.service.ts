@@ -431,14 +431,21 @@ export class FieldsService {
     });
   }
 
-  async getFieldSlotSummary(fieldId: string) {
+  async getFieldSlotSummary(fieldId: string, requestingAccountId: string) {
     const field = await this.fieldsRepository.findOne({
       where: { id: fieldId, isActive: true },
-      relations: { scheduleSettings: true },
+      relations: { scheduleSettings: true, owner: true },
     });
 
     if (!field) {
       throw new NotFoundException("Field not found");
+    }
+
+    // Verify ownership: only field owner can view membership details
+    if (field.ownerId !== requestingAccountId) {
+      throw new ForbiddenException(
+        "You do not have permission to view membership details for this field",
+      );
     }
 
     if (!field.scheduleSettings) {
@@ -468,10 +475,21 @@ export class FieldsService {
           monthlyPrice: d.monthlyPrice,
         }));
 
-        // For each day schedule, find matching slots
+        // For each day schedule, find matching slots (filter by weekday and startDate)
+        const dayNames = [
+          "sunday",
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+          "saturday",
+        ];
+
         const schedulesWithSlots = await Promise.all(
           dayTimeSchedules.map(async (schedule) => {
-            const slots = await this.fieldSlotsRepository.find({
+            // Get all available slots for this field and time window
+            const allSlots = await this.fieldSlotsRepository.find({
               where: {
                 fieldId,
                 startTime: schedule.startTime,
@@ -481,6 +499,26 @@ export class FieldsService {
               order: {
                 slotDate: "ASC",
               },
+            });
+
+            // Filter slots by weekday and startDate
+            const slots = allSlots.filter((slot) => {
+              // Check if slot date is on or after the schedule start date
+              if (slot.slotDate < schedule.startDate) {
+                return false;
+              }
+
+              // Check if slot date falls on the correct weekday
+              let slotDateObj: Date;
+              if (/^\d{4}-\d{2}-\d{2}$/.test(slot.slotDate)) {
+                const [year, month, day] = slot.slotDate.split("-").map(Number);
+                slotDateObj = new Date(year, month - 1, day);
+              } else {
+                slotDateObj = new Date(slot.slotDate);
+              }
+
+              const slotDayName = dayNames[slotDateObj.getDay()];
+              return slotDayName === schedule.day;
             });
 
             return {
@@ -501,7 +539,6 @@ export class FieldsService {
         return {
           id: plan.id,
           userName: plan.userName,
-          phoneNumber: plan.phoneNumber,
           user: plan.user ? { id: plan.user.id, name: plan.user.name } : null,
           daysOfWeek: schedulesWithSlots,
         };
