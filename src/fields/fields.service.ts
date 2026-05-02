@@ -428,6 +428,15 @@ export class FieldsService {
   }
 
   async getSlotById(fieldId: string, slotId: string) {
+    // Verify the field is active (matches listSlotsByField visibility behavior)
+    const field = await this.fieldsRepository.findOne({
+      where: { id: fieldId, isActive: true },
+    });
+
+    if (!field) {
+      throw new NotFoundException("Field not found or is inactive");
+    }
+
     const slot = await this.fieldSlotsRepository.findOne({
       where: {
         id: slotId,
@@ -1302,8 +1311,8 @@ export class FieldsService {
       const repository = manager.getRepository(FieldSlot);
 
       for (const slot of slots) {
-        // First check current slot state
-        const existingSlot = await repository.findOne({
+        // First check if slot exists (quick non-atomic lookup)
+        const slotExists = await repository.findOne({
           where: {
             fieldId,
             slotDate: slot.slotDate,
@@ -1312,37 +1321,43 @@ export class FieldsService {
           },
         });
 
-        if (!existingSlot) {
+        if (!slotExists) {
           continue; // Skip if slot doesn't exist
         }
 
-        // Only change slots that are genuinely inactive (blocked or cancelled)
-        if (
-          (existingSlot.status === "blocked" ||
-            existingSlot.status === "cancelled") &&
-          existingSlot.slotType !== "membership"
-        ) {
-          await repository.update(
-            {
+        // Atomic update: only update if slot is in inactive state (blocked/cancelled) and is normal type
+        // This folds the expected state into the update predicate to avoid race conditions
+        const result = await repository.update(
+          {
+            fieldId,
+            slotDate: slot.slotDate,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            status: In(["blocked", "cancelled"]),
+            slotType: "normal",
+          },
+          {
+            status: "available",
+            slotType: "normal",
+            price: slot.price,
+          },
+        );
+
+        // If no rows were affected, verify current state and throw appropriate error
+        if (result.affected === 0) {
+          const currentSlot = await repository.findOne({
+            where: {
               fieldId,
               slotDate: slot.slotDate,
               startTime: slot.startTime,
               endTime: slot.endTime,
             },
-            {
-              status: "available",
-              slotType: "normal",
-              price: slot.price,
-            },
-          );
-        } else if (
-          existingSlot.status !== "blocked" &&
-          existingSlot.status !== "cancelled"
-        ) {
-          // Throw error when slot is already reserved/booked/membership
-          throw new ConflictException(
-            `Cannot reopen slot ${slot.slotDate} ${slot.startTime}-${slot.endTime}: slot is already ${existingSlot.status} with type ${existingSlot.slotType}`,
-          );
+          });
+          if (currentSlot) {
+            throw new ConflictException(
+              `Cannot reopen slot ${slot.slotDate} ${slot.startTime}-${slot.endTime}: slot is already ${currentSlot.status} with type ${currentSlot.slotType}`,
+            );
+          }
         }
       }
     });
