@@ -1,0 +1,19 @@
+meta {
+  name: GetBookingById
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{development}}/bookings/{{bookingId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  Content-Type: application/json
+}

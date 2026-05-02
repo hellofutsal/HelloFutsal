@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Brackets, QueryFailedError, Repository } from "typeorm";
+import { Between, Brackets, In, QueryFailedError, Repository } from "typeorm";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { CreateFieldDto } from "./dto/create-field.dto";
 import {
@@ -24,6 +24,7 @@ import { Field } from "./entities/field.entity";
 import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity";
 import { FieldSlot } from "./entities/field-slot.entity";
 import { GroundOwnerAccount } from "../auth/entities/ground-owner.entity";
+import { Booking } from "../booking/entities/booking.entity";
 
 @Injectable()
 export class FieldsService {
@@ -37,6 +38,9 @@ export class FieldsService {
     private readonly fieldRuleBooksRepository: Repository<FieldRuleBook>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
+
+    @InjectRepository(Booking)
+    private readonly bookingsRepository: Repository<Booking>,
 
     @InjectRepository(FieldScheduleSettings)
     private readonly fieldSettingRepository: Repository<FieldScheduleSettings>,
@@ -254,8 +258,18 @@ export class FieldsService {
     );
 
     const existingSlotKeys = new Set(existingSlots);
-    const slotsToCreate: Array<{ slotDate: string; startTime: string; endTime: string; price: string }> = [];
-    const slotsToImplement: Array<{ slotDate: string; startTime: string; endTime: string; price: string }> = [];
+    const slotsToCreate: Array<{
+      slotDate: string;
+      startTime: string;
+      endTime: string;
+      price: string;
+    }> = [];
+    const slotsToImplement: Array<{
+      slotDate: string;
+      startTime: string;
+      endTime: string;
+      price: string;
+    }> = [];
 
     normalizedSlots.forEach((slot) => {
       const slotKey = `${slot.slotDate} ${slot.startTime}`;
@@ -339,26 +353,140 @@ export class FieldsService {
       throw new BadRequestException("endDate must be on or after startDate");
     }
 
-    const queryBuilder = this.fieldSlotsRepository
-      .createQueryBuilder("slot")
-      .where("slot.field_id = :fieldId", { fieldId });
+    const slotWhere =
+      startDate && endDate
+        ? {
+            fieldId,
+            slotDate: Between(startDate, endDate),
+          }
+        : { fieldId };
 
-    if (startDate && endDate) {
-      queryBuilder.andWhere("slot.slot_date BETWEEN :startDate AND :endDate", {
-        startDate,
-        endDate,
+    const slots = await this.fieldSlotsRepository.find({
+      where: slotWhere,
+      order: {
+        slotDate: "ASC",
+        startTime: "ASC",
+      },
+    });
+
+    const bookedSlotIds = slots
+      .filter((slot) => slot.status === "booked" || slot.status === "completed")
+      .map((slot) => slot.id);
+
+    let userDataMap: Record<string, any> = {};
+    if (bookedSlotIds.length > 0) {
+      const bookings = await this.bookingsRepository.find({
+        where: {
+          slotId: In(bookedSlotIds),
+        },
+        relations: {
+          user: true,
+        },
       });
+
+      userDataMap = Object.fromEntries(
+        bookings
+          .filter((booking) => booking.user)
+          .map((booking) => [
+            booking.slotId,
+            {
+              id: booking.user.id,
+              name: booking.user.name,
+              mobileNumber: booking.user.mobileNumber,
+              username: booking.user.username,
+              email: booking.user.email,
+              baseAmount: booking.baseAmount,
+              totalAmount: booking.totalAmount,
+            },
+          ]),
+      );
     }
 
-    const slots = await queryBuilder
-      .orderBy("slot.slot_date", "ASC")
-      .addOrderBy("slot.start_time", "ASC")
-      .getMany();
+    return slots.map((slot) => {
+      const result: any = {
+        id: slot.id,
+        fieldId: slot.fieldId,
+        slotDate: slot.slotDate,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        price: slot.price,
+        status: slot.status,
+        slotType: slot.slotType,
+        createdAt: slot.createdAt,
+        updatedAt: slot.updatedAt,
+      };
 
-    return slots.map((slot) => ({
-      ...slot,
-      slotType: slot.status,
-    }));
+      if (
+        (slot.status === "booked" || slot.status === "completed") &&
+        userDataMap[slot.id]
+      ) {
+        result.bookedBy = userDataMap[slot.id];
+      }
+
+      return result;
+    });
+  }
+
+  async getSlotById(fieldId: string, slotId: string) {
+    // Verify the field is active (matches listSlotsByField visibility behavior)
+    const field = await this.fieldsRepository.findOne({
+      where: { id: fieldId, isActive: true },
+    });
+
+    if (!field) {
+      throw new NotFoundException("Field not found or is inactive");
+    }
+
+    const slot = await this.fieldSlotsRepository.findOne({
+      where: {
+        id: slotId,
+        fieldId,
+      },
+    });
+
+    if (!slot) {
+      throw new NotFoundException("Slot not found");
+    }
+
+    const response: any = {
+      id: slot.id,
+      fieldId: slot.fieldId,
+      slotDate: slot.slotDate,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      price: slot.price,
+      status: slot.status,
+      slotType: slot.slotType,
+      createdAt: slot.createdAt,
+      updatedAt: slot.updatedAt,
+    };
+
+    if (slot.status === "booked" || slot.status === "completed") {
+      const booking = await this.bookingsRepository.findOne({
+        where: {
+          slotId,
+          fieldId,
+        },
+        relations: {
+          user: true,
+        },
+      });
+
+      if (booking?.user) {
+        response.bookedBy = {
+          id: booking.user.id,
+          name: booking.user.name,
+          mobileNumber: booking.user.mobileNumber,
+          username: booking.user.username,
+          email: booking.user.email,
+          baseAmount: booking.baseAmount,
+          totalAmount: booking.totalAmount,
+          discount: booking.discount,
+        };
+      }
+    }
+
+    return response;
   }
 
   async getRuleBookById(ruleBookId: string, account: AuthenticatedAccount) {
@@ -1168,19 +1296,56 @@ export class FieldsService {
 
   private async implementExistingSlots(
     fieldId: string,
-    slots: Array<{ slotDate: string; startTime: string; endTime: string; price: string }>,
+    slots: Array<{
+      slotDate: string;
+      startTime: string;
+      endTime: string;
+      price: string;
+    }>,
   ): Promise<void> {
     if (slots.length === 0) {
       return;
     }
 
-    await this.fieldSlotsRepository.manager.transaction(
-      async (manager) => {
-        const repository = manager.getRepository(FieldSlot);
-        
-        for (const slot of slots) {
-          // First check current slot state
-          const existingSlot = await repository.findOne({
+    await this.fieldSlotsRepository.manager.transaction(async (manager) => {
+      const repository = manager.getRepository(FieldSlot);
+
+      for (const slot of slots) {
+        // First check if slot exists (quick non-atomic lookup)
+        const slotExists = await repository.findOne({
+          where: {
+            fieldId,
+            slotDate: slot.slotDate,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+          },
+        });
+
+        if (!slotExists) {
+          continue; // Skip if slot doesn't exist
+        }
+
+        // Atomic update: only update if slot is in inactive state (blocked/cancelled) and is normal type
+        // This folds the expected state into the update predicate to avoid race conditions
+        const result = await repository.update(
+          {
+            fieldId,
+            slotDate: slot.slotDate,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            status: In(["blocked", "cancelled"]),
+            slotType: "normal",
+          },
+          {
+            status: "available",
+            slotType: "normal",
+            price: slot.price,
+          },
+        );
+
+        // If no rows were affected, verify current state and throw appropriate error
+        if (result.affected === 0) {
+          const currentSlot = await repository.findOne({
             where: {
               fieldId,
               slotDate: slot.slotDate,
@@ -1188,35 +1353,14 @@ export class FieldsService {
               endTime: slot.endTime,
             },
           });
-
-          if (!existingSlot) {
-            continue; // Skip if slot doesn't exist
-          }
-
-          // Only change slots that are genuinely inactive (blocked or cancelled)
-          if ((existingSlot.status === "blocked" || existingSlot.status === "cancelled") && existingSlot.slotType !== "membership") {
-            await repository.update(
-              {
-                fieldId,
-                slotDate: slot.slotDate,
-                startTime: slot.startTime,
-                endTime: slot.endTime,
-              },
-              {
-                status: "available",
-                slotType: "normal",
-                price: slot.price,
-              },
-            );
-          } else if (existingSlot.status !== "blocked" && existingSlot.status !== "cancelled") {
-            // Throw error when slot is already reserved/booked/membership
+          if (currentSlot) {
             throw new ConflictException(
-              `Cannot reopen slot ${slot.slotDate} ${slot.startTime}-${slot.endTime}: slot is already ${existingSlot.status} with type ${existingSlot.slotType}`
+              `Cannot reopen slot ${slot.slotDate} ${slot.startTime}-${slot.endTime}: slot is already ${currentSlot.status} with type ${currentSlot.slotType}`,
             );
           }
         }
-      },
-    );
+      }
+    });
   }
 
   private async ensureVenueFieldPairIsAvailable(

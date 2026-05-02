@@ -343,6 +343,58 @@ export class BookingService {
     }));
   }
 
+  async getBookingById(account: AuthenticatedAccount, bookingId: string) {
+    this.ensureAdmin(account);
+
+    const booking = await this.bookingsRepository
+      .createQueryBuilder("booking")
+      .innerJoinAndSelect("booking.user", "user")
+      .innerJoinAndSelect("booking.slot", "slot")
+      .innerJoinAndSelect("booking.field", "field")
+      .where("booking.id = :bookingId", { bookingId })
+      .andWhere("field.owner_id = :ownerId", { ownerId: account.id })
+      .getOne();
+
+    if (!booking) {
+      throw new NotFoundException("Booking not found");
+    }
+
+    return {
+      booking: {
+        id: booking.id,
+        fieldId: booking.fieldId,
+        slotId: booking.slotId,
+        userId: booking.userId,
+        status: booking.status,
+        bookingType: booking.bookingType,
+        discount: booking.discount,
+        baseAmount: booking.baseAmount,
+        totalAmount: booking.totalAmount,
+        createdAt: booking.createdAt,
+        updatedAt: booking.updatedAt,
+      },
+      customer: {
+        id: booking.user.id,
+        name: booking.user.name,
+        mobileNumber: booking.user.mobileNumber,
+        username: booking.user.username,
+        email: booking.user.email,
+      },
+      field: {
+        id: booking.fieldId,
+      },
+      slot: {
+        id: booking.slotId,
+        slotDate: booking.slot.slotDate,
+        startTime: booking.slot.startTime,
+        endTime: booking.slot.endTime,
+        slotType: booking.slot.slotType,
+        status: booking.slot.status,
+        price: this.formatAmount(booking.slot.price),
+      },
+    };
+  }
+
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
