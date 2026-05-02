@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Brackets, QueryFailedError, Repository } from "typeorm";
+import { Between, Brackets, In, QueryFailedError, Repository } from "typeorm";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { CreateFieldDto } from "./dto/create-field.dto";
 import {
@@ -24,6 +24,7 @@ import { Field } from "./entities/field.entity";
 import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity";
 import { FieldSlot } from "./entities/field-slot.entity";
 import { GroundOwnerAccount } from "../auth/entities/ground-owner.entity";
+import { Booking } from "../booking/entities/booking.entity";
 
 @Injectable()
 export class FieldsService {
@@ -37,6 +38,9 @@ export class FieldsService {
     private readonly fieldRuleBooksRepository: Repository<FieldRuleBook>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
+
+    @InjectRepository(Booking)
+    private readonly bookingsRepository: Repository<Booking>,
 
     @InjectRepository(FieldScheduleSettings)
     private readonly fieldSettingRepository: Repository<FieldScheduleSettings>,
@@ -349,65 +353,131 @@ export class FieldsService {
       throw new BadRequestException("endDate must be on or after startDate");
     }
 
-    const queryBuilder = this.fieldSlotsRepository
-      .createQueryBuilder("slot")
-      .where("slot.field_id = :fieldId", { fieldId });
+    const slotWhere =
+      startDate && endDate
+        ? {
+            fieldId,
+            slotDate: Between(startDate, endDate),
+          }
+        : { fieldId };
 
-    if (startDate && endDate) {
-      queryBuilder.andWhere("slot.slot_date BETWEEN :startDate AND :endDate", {
-        startDate,
-        endDate,
+    const slots = await this.fieldSlotsRepository.find({
+      where: slotWhere,
+      order: {
+        slotDate: "ASC",
+        startTime: "ASC",
+      },
+    });
+
+    const bookedSlotIds = slots
+      .filter((slot) => slot.status === "booked" || slot.status === "completed")
+      .map((slot) => slot.id);
+
+    let userDataMap: Record<string, any> = {};
+    if (bookedSlotIds.length > 0) {
+      const bookings = await this.bookingsRepository.find({
+        where: {
+          slotId: In(bookedSlotIds),
+        },
+        relations: {
+          user: true,
+        },
       });
-    }
 
-    const slots = await queryBuilder
-      .leftJoin("booking", "booking", "booking.slot_id = slot.id")
-      .leftJoin("user_account", "user", "user.id = booking.user_id")
-      .select([
-        "slot.id",
-        "slot.field_id",
-        "slot.slot_date",
-        "slot.start_time",
-        "slot.end_time",
-        "slot.price",
-        "slot.status",
-        "slot.slot_type",
-        "slot.created_at",
-        "slot.updated_at",
-        "user.id as user_id",
-        "user.name as user_name",
-      ])
-      .orderBy("slot.slot_date", "ASC")
-      .addOrderBy("slot.start_time", "ASC")
-      .getRawMany();
+      userDataMap = Object.fromEntries(
+        bookings
+          .filter((booking) => booking.user)
+          .map((booking) => [
+            booking.slotId,
+            {
+              id: booking.user.id,
+              name: booking.user.name,
+              mobileNumber: booking.user.mobileNumber,
+              username: booking.user.username,
+              email: booking.user.email,
+              baseAmount: booking.baseAmount,
+              totalAmount: booking.totalAmount,
+            },
+          ]),
+      );
+    }
 
     return slots.map((slot) => {
       const result: any = {
         id: slot.id,
-        fieldId: slot.field_id,
-        slotDate: slot.slot_date,
-        startTime: slot.start_time,
-        endTime: slot.end_time,
+        fieldId: slot.fieldId,
+        slotDate: slot.slotDate,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
         price: slot.price,
         status: slot.status,
-        slotType: (slot.slot_type as string) || "normal",
-        createdAt: slot.created_at,
-        updatedAt: slot.updated_at,
+        slotType: slot.slotType,
+        createdAt: slot.createdAt,
+        updatedAt: slot.updatedAt,
       };
 
-      // Add user data only if slot is booked and has user information
-      // Only include non-PII fields (id and name) on public endpoint
-      if (slot.status === "booked" || slot.status === "completed") {
-        if (slot.user_id) {
-          result.user = {
-            id: slot.user_id,
-            name: slot.user_name,
-          };
-        }
+      if (
+        (slot.status === "booked" || slot.status === "completed") &&
+        userDataMap[slot.id]
+      ) {
+        result.bookedBy = userDataMap[slot.id];
       }
 
       return result;
     });
+  }
+
+  async getSlotById(fieldId: string, slotId: string) {
+    const slot = await this.fieldSlotsRepository.findOne({
+      where: {
+        id: slotId,
+        fieldId,
+      },
+    });
+
+    if (!slot) {
+      throw new NotFoundException("Slot not found");
+    }
+
+    const response: any = {
+      id: slot.id,
+      fieldId: slot.fieldId,
+      slotDate: slot.slotDate,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      price: slot.price,
+      status: slot.status,
+      slotType: slot.slotType,
+      createdAt: slot.createdAt,
+      updatedAt: slot.updatedAt,
+    };
+
+    if (slot.status === "booked" || slot.status === "completed") {
+      const booking = await this.bookingsRepository.findOne({
+        where: {
+          slotId,
+          fieldId,
+        },
+        relations: {
+          user: true,
+        },
+      });
+
+      if (booking?.user) {
+        response.bookedBy = {
+          id: booking.user.id,
+          name: booking.user.name,
+          mobileNumber: booking.user.mobileNumber,
+          username: booking.user.username,
+          email: booking.user.email,
+          baseAmount: booking.baseAmount,
+          totalAmount: booking.totalAmount,
+          discount: booking.discount,
+        };
+      }
+    }
+
+    return response;
   }
 
   async getRuleBookById(ruleBookId: string, account: AuthenticatedAccount) {

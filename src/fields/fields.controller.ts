@@ -89,6 +89,14 @@ export class FieldsController {
     return this.fieldsService.createSlots(account, fieldId, [slotDto]);
   }
 
+  @Get(":fieldId/slots/:slotId")
+  getSlotById(
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Param("slotId", new ParseUUIDPipe()) slotId: string,
+  ) {
+    return this.fieldsService.getSlotById(fieldId, slotId);
+  }
+
   @Get(":fieldId/slots")
   getSlotsByField(
     @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
