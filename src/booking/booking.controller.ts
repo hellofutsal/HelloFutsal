@@ -50,4 +50,13 @@ export class BookingController {
   ) {
     return this.bookingService.listBookingsByField(account, fieldId);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(":id")
+  getBookingById(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ) {
+    return this.bookingService.getBookingById(account, id);
+  }
 }

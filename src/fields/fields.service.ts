@@ -351,14 +351,58 @@ export class FieldsService {
     }
 
     const slots = await queryBuilder
+      .leftJoin("booking", "booking", "booking.slot_id = slot.id")
+      .leftJoin("user_account", "user", "user.id = booking.user_id")
+      .select([
+        "slot.id",
+        "slot.field_id",
+        "slot.slot_date",
+        "slot.start_time",
+        "slot.end_time",
+        "slot.price",
+        "slot.status",
+        "slot.slot_type",
+        "slot.created_at",
+        "slot.updated_at",
+        "user.id as user_id",
+        "user.name as user_name",
+        "user.mobile_number as user_mobile_number",
+        "user.username as user_username",
+        "user.email as user_email",
+      ])
       .orderBy("slot.slot_date", "ASC")
       .addOrderBy("slot.start_time", "ASC")
-      .getMany();
+      .getRawMany();
 
-    return slots.map((slot) => ({
-      ...slot,
-      slotType: slot.status,
-    }));
+    return slots.map((slot) => {
+      const result: any = {
+        id: slot.id,
+        fieldId: slot.field_id,
+        slotDate: slot.slot_date,
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        price: slot.price,
+        status: slot.status,
+        slotType: slot.slot_type || slot.status,
+        createdAt: slot.created_at,
+        updatedAt: slot.updated_at,
+      };
+
+      // Add user data only if slot is booked and has user information
+      if (slot.status === "booked" || slot.status === "completed") {
+        if (slot.user_id) {
+          result.user = {
+            id: slot.user_id,
+            name: slot.user_name,
+            mobileNumber: slot.user_mobile_number,
+            username: slot.user_username,
+            email: slot.user_email,
+          };
+        }
+      }
+
+      return result;
+    });
   }
 
   async getRuleBookById(ruleBookId: string, account: AuthenticatedAccount) {
