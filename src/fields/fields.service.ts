@@ -25,6 +25,7 @@ import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity
 import { FieldSlot } from "./entities/field-slot.entity";
 import { GroundOwnerAccount } from "../auth/entities/ground-owner.entity";
 import { Booking } from "../booking/entities/booking.entity";
+import { MembershipPlan } from "../booking/entities/membership-plan.entity";
 
 @Injectable()
 export class FieldsService {
@@ -44,6 +45,9 @@ export class FieldsService {
 
     @InjectRepository(FieldScheduleSettings)
     private readonly fieldSettingRepository: Repository<FieldScheduleSettings>,
+
+    @InjectRepository(MembershipPlan)
+    private readonly membershipPlanRepository: Repository<MembershipPlan>,
 
     @InjectRepository(GroundOwnerAccount)
     private readonly groundOwnerAccountsRepository: Repository<GroundOwnerAccount>,
@@ -427,10 +431,7 @@ export class FieldsService {
     });
   }
 
-  async getFieldSlotSummary(
-    fieldId: string,
-    dateRange?: { startDate?: string; endDate?: string },
-  ) {
+  async getFieldSlotSummary(fieldId: string) {
     const field = await this.fieldsRepository.findOne({
       where: { id: fieldId, isActive: true },
       relations: { scheduleSettings: true },
@@ -440,129 +441,87 @@ export class FieldsService {
       throw new NotFoundException("Field not found");
     }
 
-    const { startDate, endDate } = dateRange ?? {};
-    if ((startDate && !endDate) || (!startDate && endDate)) {
-      throw new BadRequestException(
-        "startDate and endDate must be provided together",
-      );
+    if (!field.scheduleSettings) {
+      throw new NotFoundException("Field schedule settings not found");
     }
 
-    if (startDate && endDate && endDate < startDate) {
-      throw new BadRequestException("endDate must be on or after startDate");
-    }
+    // Fetch all active membership plans for this field
+    const membershipPlans = await this.membershipPlanRepository
+      .createQueryBuilder("plan")
+      .leftJoinAndSelect("plan.user", "user")
+      .where("plan.field_id = :fieldId", { fieldId })
+      .andWhere("plan.active = true")
+      .orderBy("plan.created_at", "DESC")
+      .getMany();
 
-    const slotWhere =
-      startDate && endDate
-        ? {
-            fieldId,
-            slotDate: Between(startDate, endDate),
-          }
-        : { fieldId };
+    // For each membership, find assigned slots
+    const membershipData = await Promise.all(
+      membershipPlans.map(async (plan) => {
+        const daysOfWeek = (plan.daysOfWeek as any[]) || [];
 
-    const slots = await this.fieldSlotsRepository.find({
-      where: slotWhere,
-      order: {
-        slotDate: "ASC",
-        startTime: "ASC",
-      },
-    });
+        // Collect all days and times from this membership
+        const dayTimeSchedules = daysOfWeek.map((d) => ({
+          day: d.day,
+          startTime: d.startTime,
+          endTime: d.endTime,
+          startDate: d.startDate,
+          monthlyPrice: d.monthlyPrice,
+        }));
 
-    const bookedSlotIds = slots
-      .filter((slot) => slot.status === "booked" || slot.status === "completed")
-      .map((slot) => slot.id);
+        // For each day schedule, find matching slots
+        const schedulesWithSlots = await Promise.all(
+          dayTimeSchedules.map(async (schedule) => {
+            const slots = await this.fieldSlotsRepository.find({
+              where: {
+                fieldId,
+                startTime: schedule.startTime,
+                endTime: schedule.endTime,
+                slotType: "membership",
+              },
+              order: {
+                slotDate: "ASC",
+              },
+            });
 
-    let bookingMap: Record<string, any> = {};
-    if (bookedSlotIds.length > 0) {
-      const bookings = await this.bookingsRepository.find({
-        where: {
-          slotId: In(bookedSlotIds),
-        },
-        relations: {
-          user: true,
-        },
-      });
+            return {
+              day: schedule.day,
+              startTime: schedule.startTime,
+              endTime: schedule.endTime,
+              startDate: schedule.startDate,
+              monthlyPrice: schedule.monthlyPrice,
+              slots: slots.map((s) => ({
+                id: s.id,
+                slotDate: s.slotDate,
+                status: s.status,
+              })),
+            };
+          }),
+        );
 
-      bookingMap = Object.fromEntries(
-        bookings
-          .filter((booking) => booking.user)
-          .map((booking) => [
-            booking.slotId,
-            {
-              id: booking.user.id,
-              name: booking.user.name,
-              baseAmount: booking.baseAmount,
-              totalAmount: booking.totalAmount,
-              discount: booking.discount,
-              bookingType: booking.bookingType,
-            },
-          ]),
-      );
-    }
-
-    const summary = slots.reduce(
-      (acc, slot) => {
-        acc.total += 1;
-        acc[slot.status] = (acc[slot.status] ?? 0) + 1;
-        return acc;
-      },
-      {
-        total: 0,
-        available: 0,
-        booked: 0,
-        completed: 0,
-        blocked: 0,
-        cancelled: 0,
-      } as Record<string, number>,
+        return {
+          id: plan.id,
+          userName: plan.userName,
+          phoneNumber: plan.phoneNumber,
+          user: plan.user ? { id: plan.user.id, name: plan.user.name } : null,
+          daysOfWeek: schedulesWithSlots,
+        };
+      }),
     );
 
     return {
       field: {
         id: field.id,
-        venueName: field.venueName,
         fieldName: field.fieldName,
-        playerCapacity: field.playerCapacity,
-        city: field.city,
-        address: field.address,
-        description: field.description,
-        isActive: field.isActive,
+        venueName: field.venueName,
       },
-      scheduleSettings: field.scheduleSettings
-        ? {
-            id: field.scheduleSettings.id,
-            fieldId: field.scheduleSettings.fieldId,
-            slotDurationMin: field.scheduleSettings.slotDurationMin,
-            breakBetweenMin: field.scheduleSettings.breakBetweenMin,
-            basePrice: field.scheduleSettings.basePrice,
-            openingTime: field.scheduleSettings.openingTime,
-            closingTime: field.scheduleSettings.closingTime,
-            createdAt: field.scheduleSettings.createdAt,
-            updatedAt: field.scheduleSettings.updatedAt,
-          }
-        : null,
-      summary,
-      slots: slots.map((slot) => {
-        const result: any = {
-          id: slot.id,
-          fieldId: slot.fieldId,
-          slotDate: slot.slotDate,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-          price: slot.price,
-          status: slot.status,
-          slotType: slot.slotType,
-          createdAt: slot.createdAt,
-          updatedAt: slot.updatedAt,
-        };
-
-        if (
-          (slot.status === "booked" || slot.status === "completed") &&
-          bookingMap[slot.id]
-        ) {
-          result.bookedBy = bookingMap[slot.id];
-        }
-
-        return result;
-      }),
+      scheduleSettings: {
+        slotDurationMin: field.scheduleSettings.slotDurationMin,
+        breakBetweenMin: field.scheduleSettings.breakBetweenMin,
+        basePrice: field.scheduleSettings.basePrice,
+        openingTime: field.scheduleSettings.openingTime,
+        closingTime: field.scheduleSettings.closingTime,
+      },
+      membershipPlans: membershipData,
     };
   }
 
