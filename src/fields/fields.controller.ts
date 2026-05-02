@@ -107,6 +107,15 @@ export class FieldsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get(":fieldId/slot-summary")
+  getFieldSlotSummary(
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @CurrentAccount() account: AuthenticatedAccount,
+  ) {
+    return this.fieldsService.getFieldSlotSummary(fieldId, account.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post(":fieldId/schedule-settings")
   createScheduleSettings(
     @CurrentAccount() account: AuthenticatedAccount,

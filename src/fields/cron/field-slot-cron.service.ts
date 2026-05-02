@@ -6,7 +6,10 @@ import { DateTime } from "luxon";
 import { Field } from "../entities/field.entity";
 import { FieldSlotGenerator } from "./field-slot-generator";
 import { FieldSlotSyncService } from "./field-slot-sync.service";
-import { MembershipPlan } from "../../booking/entities/membership-plan.entity";
+import {
+  MembershipDaySchedule,
+  MembershipPlan,
+} from "../../booking/entities/membership-plan.entity";
 import { Booking } from "../../booking/entities/booking.entity";
 import { FieldSlot } from "../entities/field-slot.entity";
 
@@ -155,267 +158,236 @@ export class FieldSlotCronService {
       if (!plan.field || !plan.user) continue;
 
       this.logger.log(
-        `Processing membership plan: User=${plan.user.name}, Field=${plan.field.fieldName}, Days=${plan.daysOfWeek}, Time=${plan.startTime}-${plan.endTime}, StartDate=${plan.startDate}`,
+        `Processing membership plan: User=${plan.user.name}, Field=${plan.field.fieldName}`,
       );
 
-      // Check each upcoming date for this membership plan
-      for (const upcomingDate of upcomingDates) {
-        // Parse upcoming date in Nepal timezone to ensure correct day/weekday
-        const upcomingDateTime = DateTime.fromISO(upcomingDate, {
-          zone: "Asia/Kathmandu",
-        });
-        const upcomingDayName = dayNames[upcomingDateTime.weekday % 7 || 0];
+      // For each day-schedule in the plan, evaluate upcoming dates
+      const planDaySchedules =
+        plan.daysOfWeek as unknown as MembershipDaySchedule[];
 
-        this.logger.log(
-          `Checking date ${upcomingDate} (${upcomingDayName}) against plan days: ${plan.daysOfWeek.join(", ")}`,
-        );
+      for (const daySchedule of planDaySchedules) {
+        for (const upcomingDate of upcomingDates) {
+          const upcomingDateTime = DateTime.fromISO(upcomingDate, {
+            zone: "Asia/Kathmandu",
+          });
+          const upcomingDayName = dayNames[upcomingDateTime.weekday % 7 || 0];
 
-        // Check if this day is in the membership plan's days
-        if (!plan.daysOfWeek.includes(upcomingDayName)) {
+          if (daySchedule.day !== upcomingDayName) continue;
+
+          // Check if the upcoming date is on or after this day's membership start date
+          if (upcomingDate < daySchedule.startDate) continue;
+
           this.logger.log(
-            `Skipping ${upcomingDate} - day ${upcomingDayName} not in plan days`,
+            `Found matching date ${upcomingDate} (${upcomingDayName}) - attempting to book slot for field ${plan.field.id} at ${daySchedule.startTime}-${daySchedule.endTime}`,
           );
-          continue;
-        }
 
-        // Check if the upcoming date is on or after the membership start date
-        if (upcomingDate < plan.startDate) {
-          this.logger.log(
-            `Skipping ${upcomingDate} - date is before membership start date ${plan.startDate}`,
-          );
-          continue;
-        }
+          // Check for conflicting plans for this specific day/time
+          const conflictingPlans = plans.filter((otherPlan) => {
+            if (otherPlan.id === plan.id) return false;
+            if (!otherPlan.field || otherPlan.field.id !== plan.field.id)
+              return false;
 
-        this.logger.log(
-          `Found matching date ${upcomingDate} (${upcomingDayName}) - attempting to book slot for field ${plan.field.id} at ${plan.startTime}-${plan.endTime}`,
-        );
-
-        // Check if there are other membership plans that might conflict with this slot
-        const conflictingPlans = plans.filter(
-          (otherPlan) =>
-            otherPlan.id !== plan.id &&
-            otherPlan.field &&
-            otherPlan.field.id === plan.field.id &&
-            otherPlan.daysOfWeek.includes(upcomingDayName) &&
-            otherPlan.startDate <= upcomingDate &&
-            this.timeRangesOverlap(
-              plan.startTime,
-              plan.endTime,
-              otherPlan.startTime,
-              otherPlan.endTime,
-            ),
-        );
-
-        if (conflictingPlans.length > 0) {
-          this.logger.warn(
-            `Multiple membership plans conflict for ${upcomingDate} ${plan.startTime}-${plan.endTime}: ${conflictingPlans.map((p) => p.user?.name || "Unknown").join(", ")}. Skipping this slot.`,
-          );
-          membershipSkipped++;
-          continue;
-        }
-
-        try {
-          const booked = await this.fieldSlotRepo.manager.transaction(
-            async (manager) => {
-              // First check if slot exists and get its current status
-              const existingSlot = await manager
-                .getRepository(FieldSlot)
-                .createQueryBuilder("slot")
-                .where("slot.field_id = :fieldId", { fieldId: plan.field.id })
-                .andWhere("slot.slot_date = :slotDate", {
-                  slotDate: upcomingDate,
-                })
-                .andWhere("slot.start_time = :startTime", {
-                  startTime: plan.startTime,
-                })
-                .andWhere("slot.end_time = :endTime", { endTime: plan.endTime })
-                .getOne();
-
-              this.logger.log(
-                `Slot search result for ${upcomingDate} ${plan.startTime}-${plan.endTime}:`,
-                existingSlot
-                  ? {
-                      id: existingSlot.id,
-                      status: existingSlot.status,
-                      slotType: existingSlot.slotType,
-                      price: existingSlot.price,
-                    }
-                  : "NOT FOUND",
-              );
-
-              if (!existingSlot) {
-                this.logger.warn(
-                  `Slot not found for membership user ${plan.user.id} on field ${plan.field.id} at ${plan.startTime} for date ${upcomingDate}`,
-                );
+            const otherSchedules = (otherPlan.daysOfWeek as any[]) || [];
+            return otherSchedules.some((s) => {
+              // Skip schedules that start after the upcoming date
+              if (s.startDate && s.startDate > upcomingDate) {
                 return false;
               }
+              return (
+                s.day === upcomingDayName &&
+                this.timeRangesOverlap(
+                  daySchedule.startTime,
+                  daySchedule.endTime,
+                  s.startTime,
+                  s.endTime,
+                )
+              );
+            });
+          });
 
-              // Check if slot is already booked for membership type
-              if (
-                existingSlot.slotType === "membership" &&
-                existingSlot.status === "booked"
-              ) {
-                const existingBooking = await manager
-                  .getRepository(Booking)
-                  .createQueryBuilder("booking")
-                  .where("booking.slot_id = :slotId", {
-                    slotId: existingSlot.id,
+          if (conflictingPlans.length > 0) {
+            this.logger.warn(
+              `Multiple membership plans conflict for ${upcomingDate} ${daySchedule.startTime}-${daySchedule.endTime}: ${conflictingPlans.map((p) => p.user?.name || "Unknown").join(", ")}. Skipping this slot.`,
+            );
+            membershipSkipped++;
+            continue;
+          }
+
+          try {
+            const booked = await this.fieldSlotRepo.manager.transaction(
+              async (manager) => {
+                // First check if slot exists and get its current status
+                const existingSlot = await manager
+                  .getRepository(FieldSlot)
+                  .createQueryBuilder("slot")
+                  .where("slot.field_id = :fieldId", { fieldId: plan.field.id })
+                  .andWhere("slot.slot_date = :slotDate", {
+                    slotDate: upcomingDate,
                   })
-                  .andWhere("booking.booking_type = :bookingType", {
-                    bookingType: "membership",
+                  .andWhere("slot.start_time = :startTime", {
+                    startTime: daySchedule.startTime,
+                  })
+                  .andWhere("slot.end_time = :endTime", {
+                    endTime: daySchedule.endTime,
                   })
                   .getOne();
 
-                if (existingBooking) {
-                  this.logger.log(
-                    `Slot ${existingSlot.id} already booked for membership user ${existingBooking.userId} on field ${plan.field.id}`,
+                if (!existingSlot) {
+                  this.logger.warn(
+                    `Slot not found for membership user ${plan.user.id} on field ${plan.field.id} at ${daySchedule.startTime} for date ${upcomingDate}`,
                   );
                   return false;
                 }
-              }
 
-              // Get slot with pessimistic lock for update
-              const slot = await manager
-                .getRepository(FieldSlot)
-                .createQueryBuilder("slot")
-                .where("slot.field_id = :fieldId", { fieldId: plan.field.id })
-                .andWhere("slot.slot_date = :slotDate", {
-                  slotDate: upcomingDate,
-                })
-                .andWhere("slot.start_time = :startTime", {
-                  startTime: plan.startTime,
-                })
-                .andWhere("slot.end_time = :endTime", { endTime: plan.endTime })
-                .setLock("pessimistic_write")
-                .getOne();
+                if (
+                  existingSlot.slotType === "membership" &&
+                  existingSlot.status === "booked"
+                ) {
+                  const existingBooking = await manager
+                    .getRepository(Booking)
+                    .createQueryBuilder("booking")
+                    .where("booking.slot_id = :slotId", {
+                      slotId: existingSlot.id,
+                    })
+                    .andWhere("booking.booking_type = :bookingType", {
+                      bookingType: "membership",
+                    })
+                    .getOne();
 
-              if (!slot) return false;
-
-              // Calculate per-day price from monthlyPrice if set
-              if (plan.monthlyPrice) {
-                const perDayPrice = (
-                  parseFloat(plan.monthlyPrice) / 30
-                ).toFixed(2);
-                slot.price = perDayPrice;
-              }
-
-              // If slot is booked for non-membership, override it with membership booking
-              if (slot.status === "booked" && slot.slotType !== "membership") {
-                this.logger.log(
-                  `Overriding non-membership booking for slot ${slot.id} with membership booking for user ${plan.user.id} on field ${plan.field.id}`,
-                );
-
-                // Update slot to membership type and price
-                slot.status = "booked";
-                slot.slotType = "membership";
-
-                // Update existing booking to membership type
-                const existingBooking = await manager
-                  .getRepository(Booking)
-                  .createQueryBuilder("booking")
-                  .where("booking.slot_id = :slotId", { slotId: slot.id })
-                  .getOne();
-
-                if (existingBooking) {
-                  existingBooking.userId = plan.user.id;
-                  existingBooking.bookingType = "membership";
-                  existingBooking.totalAmount = "0";
-                  await manager.save(Booking, existingBooking);
+                  if (existingBooking) return false;
                 }
 
-                await manager.save(FieldSlot, slot);
-                return {
-                  slotId: slot.id,
-                  userId: plan.user.id,
-                  fieldId: plan.field.id,
-                  date: upcomingDate,
-                  action: "overridden",
-                };
-              }
+                // Get slot with pessimistic lock for update
+                const slot = await manager
+                  .getRepository(FieldSlot)
+                  .createQueryBuilder("slot")
+                  .where("slot.field_id = :fieldId", { fieldId: plan.field.id })
+                  .andWhere("slot.slot_date = :slotDate", {
+                    slotDate: upcomingDate,
+                  })
+                  .andWhere("slot.start_time = :startTime", {
+                    startTime: daySchedule.startTime,
+                  })
+                  .andWhere("slot.end_time = :endTime", {
+                    endTime: daySchedule.endTime,
+                  })
+                  .setLock("pessimistic_write")
+                  .getOne();
 
-              // Check existing booking for this slot
-              let booking = await manager
-                .getRepository(Booking)
-                .createQueryBuilder("booking")
-                .where("booking.slot_id = :slotId", { slotId: slot.id })
-                .getOne();
+                if (!slot) return false;
 
-              if (booking) {
-                // If already booked for this user as membership, update slot price and type
+                // Calculate per-day price from monthlyPrice
+                if (daySchedule.monthlyPrice) {
+                  const perSlot = (
+                    parseFloat(daySchedule.monthlyPrice as any) / 30
+                  ).toFixed(2);
+                  slot.price = perSlot;
+                }
+
+                // If slot is booked for non-membership, override it with membership booking
                 if (
-                  booking.userId === plan.user.id &&
-                  booking.bookingType === "membership"
+                  slot.status === "booked" &&
+                  slot.slotType !== "membership"
                 ) {
                   slot.status = "booked";
                   slot.slotType = "membership";
+
+                  const existingBooking = await manager
+                    .getRepository(Booking)
+                    .createQueryBuilder("booking")
+                    .where("booking.slot_id = :slotId", { slotId: slot.id })
+                    .getOne();
+                  if (existingBooking) {
+                    existingBooking.userId = plan.user.id;
+                    existingBooking.bookingType = "membership";
+                    existingBooking.totalAmount = "0";
+                    await manager.save(Booking, existingBooking);
+                  }
+
                   await manager.save(FieldSlot, slot);
                   return {
                     slotId: slot.id,
                     userId: plan.user.id,
                     fieldId: plan.field.id,
                     date: upcomingDate,
-                    action: "updated",
+                    action: "overridden",
                   };
                 }
-                // Otherwise, skip (already booked by someone else)
-                return false;
-              }
 
-              // If slot is available, book it for membership
-              slot.status = "booked";
-              slot.slotType = "membership";
-              await manager.save(FieldSlot, slot);
+                // Check existing booking for this slot
+                let booking = await manager
+                  .getRepository(Booking)
+                  .createQueryBuilder("booking")
+                  .where("booking.slot_id = :slotId", { slotId: slot.id })
+                  .getOne();
 
-              booking = this.bookingRepo.create({
-                fieldId: plan.field.id,
-                slotId: slot.id,
-                userId: plan.user.id,
-                status: "booked",
-                totalAmount: "0",
-                bookingType: "membership",
-              });
-              await manager.save(Booking, booking);
+                if (booking) {
+                  if (
+                    booking.userId === plan.user.id &&
+                    booking.bookingType === "membership"
+                  ) {
+                    slot.status = "booked";
+                    slot.slotType = "membership";
+                    await manager.save(FieldSlot, slot);
+                    return {
+                      slotId: slot.id,
+                      userId: plan.user.id,
+                      fieldId: plan.field.id,
+                      date: upcomingDate,
+                      action: "updated",
+                    };
+                  }
+                  return false;
+                }
 
-              return {
-                slotId: slot.id,
-                userId: plan.user.id,
-                fieldId: plan.field.id,
-                date: upcomingDate,
-                action: "created",
-              };
-            },
-          );
+                // If slot is available, book it for membership
+                slot.status = "booked";
+                slot.slotType = "membership";
+                await manager.save(FieldSlot, slot);
 
-          if (booked) {
-            if (booked.action === "created") {
-              membershipCreated++;
-            } else if (booked.action === "overridden") {
-              membershipProcessed++;
-            } else {
-              membershipProcessed++;
-            }
-            this.logger.log(
-              `${booked.action === "updated" ? "Updated" : booked.action === "overridden" ? "Overridden" : "Created"} membership booking for slot ${booked.slotId} user ${booked.userId} on field ${booked.fieldId} for date ${booked.date}`,
+                booking = this.bookingRepo.create({
+                  fieldId: plan.field.id,
+                  slotId: slot.id,
+                  userId: plan.user.id,
+                  status: "booked",
+                  totalAmount: "0",
+                  bookingType: "membership",
+                });
+                await manager.save(Booking, booking);
+
+                return {
+                  slotId: slot.id,
+                  userId: plan.user.id,
+                  fieldId: plan.field.id,
+                  date: upcomingDate,
+                  action: "created",
+                };
+              },
             );
-          } else {
+
+            if (booked) {
+              if (booked.action === "created") membershipCreated++;
+              else membershipProcessed++;
+              this.logger.log(
+                `${booked.action === "updated" ? "Updated" : booked.action === "overridden" ? "Overridden" : "Created"} membership booking for slot ${booked.slotId} user ${booked.userId} on field ${booked.fieldId} for date ${booked.date}`,
+              );
+            } else membershipSkipped++;
+          } catch (error) {
             membershipSkipped++;
-          }
-        } catch (error) {
-          membershipSkipped++;
-          // Handle unique constraint violation or log error
-          if (
-            error &&
-            typeof error === "object" &&
-            "code" in error &&
-            (error.code === "23505" || error.code === "SQLITE_CONSTRAINT")
-          ) {
-            this.logger.warn(
-              `Slot already booked for membership user ${plan.user.id} on field ${plan.field.id} at ${plan.startTime} for date ${upcomingDate}`,
-            );
-          } else {
-            this.logger.error(
-              `Failed to book slot for membership user ${plan.user.id} on field ${plan.field.id} at ${plan.startTime} for date ${upcomingDate}: ${error instanceof Error ? error.stack : String(error)}`,
-            );
+            if (
+              error &&
+              typeof error === "object" &&
+              "code" in error &&
+              (error.code === "23505" || error.code === "SQLITE_CONSTRAINT")
+            ) {
+              this.logger.warn(
+                `Slot already booked for membership user ${plan.user.id} on field ${plan.field.id} at ${daySchedule.startTime} for date ${upcomingDate}`,
+              );
+            } else {
+              this.logger.error(
+                `Failed to book slot for membership user ${plan.user.id} on field ${plan.field.id} at ${daySchedule.startTime} for date ${upcomingDate}: ${error instanceof Error ? error.stack : String(error)}`,
+              );
+            }
           }
         }
       }

@@ -1,0 +1,85 @@
+meta {
+  name: CreateMembershipPlan
+  type: http
+  seq: 20
+}
+
+post {
+  url: {{development}}/membership-plans
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "userName": "Ayush Morning Slot 2",
+    "phoneNumber": "9867654567",
+    "fieldId": "{{fieldId}}",
+    "daysOfWeek": [
+      {
+        "day": "saturday",
+        "startTime": "06:00",
+        "endTime": "07:00",
+  "startDate": "2026-05-02",
+          "monthlyPrice": 1000.00
+      },
+      {
+        "day": "sunday",
+        "startTime": "07:00",
+        "endTime": "08:00",
+  "startDate": "2026-05-02",
+          "monthlyPrice": 1000.00
+      }
+    ],
+    
+  
+    "active": true
+  }
+}
+
+docs {
+  # Create Flexible Membership Plan
+  
+  Creates a membership plan with flexible day/time scheduling. Each day in the membership can have independent start and end times.
+  
+  ## Request Body
+  
+  - `userName` (string): Name of the membership user
+  - `phoneNumber` (string): Phone number of the membership user
+  - `fieldId` (uuid): ID of the field this membership is for
+  - `daysOfWeek` (array): Array of day schedules with individual times:
+    - `day` (string): Day name (sunday, monday, tuesday, wednesday, thursday, friday, saturday)
+    - `startTime` (string): Start time in HH:mm format (e.g., "08:00")
+    - `endTime` (string): End time in HH:mm format (e.g., "09:00")
+  - `startDate` (string): Start date in YYYY-MM-DD format
+  - `monthlyPrice` (number): Monthly price for the membership
+  - `active` (boolean, optional): Whether the membership is active (default: true)
+  
+  ## Example Usage
+  
+  A user can choose different times for different days:
+  - Saturday: 08:00-09:00
+  - Sunday: 09:00-10:00
+  - Monday: 08:00-09:00
+  
+  ## Response
+  
+  Returns the created membership plan with:
+  - `plan`: The membership plan object with perSlotPrice (monthlyPrice / 30)
+  - `syncedSlots`: Number of slots that were automatically synced and booked
+  - `success`: Boolean indicating success
+  
+  ## Validations
+  
+  - End time must be after start time for each day
+  - No overlapping time windows for the same day with existing membership plans
+  - Field must belong to the authenticated user
+}

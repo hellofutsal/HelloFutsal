@@ -25,6 +25,7 @@ import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity
 import { FieldSlot } from "./entities/field-slot.entity";
 import { GroundOwnerAccount } from "../auth/entities/ground-owner.entity";
 import { Booking } from "../booking/entities/booking.entity";
+import { MembershipPlan } from "../booking/entities/membership-plan.entity";
 
 @Injectable()
 export class FieldsService {
@@ -44,6 +45,9 @@ export class FieldsService {
 
     @InjectRepository(FieldScheduleSettings)
     private readonly fieldSettingRepository: Repository<FieldScheduleSettings>,
+
+    @InjectRepository(MembershipPlan)
+    private readonly membershipPlanRepository: Repository<MembershipPlan>,
 
     @InjectRepository(GroundOwnerAccount)
     private readonly groundOwnerAccountsRepository: Repository<GroundOwnerAccount>,
@@ -425,6 +429,137 @@ export class FieldsService {
 
       return result;
     });
+  }
+
+  async getFieldSlotSummary(fieldId: string, requestingAccountId: string) {
+    const field = await this.fieldsRepository.findOne({
+      where: { id: fieldId, isActive: true },
+      relations: { scheduleSettings: true, owner: true },
+    });
+
+    if (!field) {
+      throw new NotFoundException("Field not found");
+    }
+
+    // Verify ownership: only field owner can view membership details
+    if (field.ownerId !== requestingAccountId) {
+      throw new ForbiddenException(
+        "You do not have permission to view membership details for this field",
+      );
+    }
+
+    if (!field.scheduleSettings) {
+      throw new NotFoundException("Field schedule settings not found");
+    }
+
+    // Fetch all active membership plans for this field
+    const membershipPlans = await this.membershipPlanRepository
+      .createQueryBuilder("plan")
+      .leftJoinAndSelect("plan.user", "user")
+      .where("plan.field_id = :fieldId", { fieldId })
+      .andWhere("plan.active = true")
+      .orderBy("plan.created_at", "DESC")
+      .getMany();
+
+    // For each membership, find assigned slots
+    const membershipData = await Promise.all(
+      membershipPlans.map(async (plan) => {
+        const daysOfWeek = (plan.daysOfWeek as any[]) || [];
+
+        // Collect all days and times from this membership
+        const dayTimeSchedules = daysOfWeek.map((d) => ({
+          day: d.day,
+          startTime: d.startTime,
+          endTime: d.endTime,
+          startDate: d.startDate,
+          monthlyPrice: d.monthlyPrice,
+        }));
+
+        // For each day schedule, find matching slots (filter by weekday and startDate)
+        const dayNames = [
+          "sunday",
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+          "saturday",
+        ];
+
+        const schedulesWithSlots = await Promise.all(
+          dayTimeSchedules.map(async (schedule) => {
+            // Get all available slots for this field and time window
+            const allSlots = await this.fieldSlotsRepository.find({
+              where: {
+                fieldId,
+                startTime: schedule.startTime,
+                endTime: schedule.endTime,
+                slotType: "membership",
+              },
+              order: {
+                slotDate: "ASC",
+              },
+            });
+
+            // Filter slots by weekday and startDate
+            const slots = allSlots.filter((slot) => {
+              // Check if slot date is on or after the schedule start date
+              if (slot.slotDate < schedule.startDate) {
+                return false;
+              }
+
+              // Check if slot date falls on the correct weekday
+              let slotDateObj: Date;
+              if (/^\d{4}-\d{2}-\d{2}$/.test(slot.slotDate)) {
+                const [year, month, day] = slot.slotDate.split("-").map(Number);
+                slotDateObj = new Date(year, month - 1, day);
+              } else {
+                slotDateObj = new Date(slot.slotDate);
+              }
+
+              const slotDayName = dayNames[slotDateObj.getDay()];
+              return slotDayName === schedule.day;
+            });
+
+            return {
+              day: schedule.day,
+              startTime: schedule.startTime,
+              endTime: schedule.endTime,
+              startDate: schedule.startDate,
+              monthlyPrice: schedule.monthlyPrice,
+              slots: slots.map((s) => ({
+                id: s.id,
+                slotDate: s.slotDate,
+                status: s.status,
+              })),
+            };
+          }),
+        );
+
+        return {
+          id: plan.id,
+          userName: plan.userName,
+          user: plan.user ? { id: plan.user.id, name: plan.user.name } : null,
+          daysOfWeek: schedulesWithSlots,
+        };
+      }),
+    );
+
+    return {
+      field: {
+        id: field.id,
+        fieldName: field.fieldName,
+        venueName: field.venueName,
+      },
+      scheduleSettings: {
+        slotDurationMin: field.scheduleSettings.slotDurationMin,
+        breakBetweenMin: field.scheduleSettings.breakBetweenMin,
+        basePrice: field.scheduleSettings.basePrice,
+        openingTime: field.scheduleSettings.openingTime,
+        closingTime: field.scheduleSettings.closingTime,
+      },
+      membershipPlans: membershipData,
+    };
   }
 
   async getSlotById(fieldId: string, slotId: string) {

@@ -5,15 +5,20 @@ meta {
 }
 
 get {
-  url: {{development}}/bookings/field/{{fieldId}}/revenue?startDate=2026-04-01&endDate=2026-04-14
+  url: {{development}}/bookings/field/{{fieldId}}/revenue?startDate=2026-04-01&endDate=2026-05-14
   body: none
   auth: bearer
 }
 
-auth:bearer {
-  token: {{token}}
+query {
+  startDate: 2026-04-01
+  endDate: 2026-05-14
 }
 
 headers {
   Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
 }

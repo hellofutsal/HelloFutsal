@@ -10,6 +10,17 @@ import {
 import { UserAccount } from "../../auth/entities/user.entity";
 import { Field } from "../../fields/entities/field.entity";
 
+/**
+ * Flexible membership day schedule: each day can have independent start/end times
+ */
+export interface MembershipDaySchedule {
+  day: string; // "monday", "tuesday", etc.
+  startTime: string; // HH:mm format
+  endTime: string; // HH:mm format
+  startDate: string; // YYYY-MM-DD
+  monthlyPrice: string; // stored as numeric string (precision handled by plan.monthly_price)
+}
+
 @Entity({ name: "membership_plans" })
 export class MembershipPlan {
   @PrimaryGeneratedColumn("uuid")
@@ -29,14 +40,8 @@ export class MembershipPlan {
   @JoinColumn({ name: "field_id" })
   field!: Field;
 
-  @Column({ name: "days_of_week", type: "simple-array" })
-  daysOfWeek!: string[]; // e.g., ["sunday", "friday"]
-
-  @Column({ name: "start_time", type: "time" })
-  startTime!: string;
-
-  @Column({ name: "end_time", type: "time" })
-  endTime!: string;
+  @Column({ name: "days_of_week", type: "jsonb" })
+  daysOfWeek!: MembershipDaySchedule[]; // e.g., [{day: "sunday", startTime: "08:00", endTime: "09:00"}]
 
   /**
    * Start date from which this membership plan becomes active.
