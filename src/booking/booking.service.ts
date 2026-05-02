@@ -109,10 +109,6 @@ export class BookingService {
             .createQueryBuilder("plan")
             .where("plan.field_id = :fieldId", { fieldId: slot.fieldId })
             .andWhere("plan.user_id = :userId", { userId: user.id })
-            .andWhere("plan.start_time = :startTime", {
-              startTime: slot.startTime,
-            })
-            .andWhere("plan.end_time = :endTime", { endTime: slot.endTime })
             .andWhere("plan.start_date <= :slotDate", {
               slotDate: slot.slotDate,
             })
@@ -121,7 +117,10 @@ export class BookingService {
             .then((plans) =>
               plans.find((p) =>
                 (p.daysOfWeek as MembershipDaySchedule[]).some(
-                  (schedule) => schedule.day === slotDayName,
+                  (schedule) =>
+                    schedule.day === slotDayName &&
+                    schedule.startTime === slot.startTime &&
+                    schedule.endTime === slot.endTime,
                 ),
               ),
             );
