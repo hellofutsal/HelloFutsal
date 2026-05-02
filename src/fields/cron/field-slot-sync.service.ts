@@ -65,7 +65,7 @@ export class FieldSlotSyncService {
               scheduleSettings.openingTime,
               scheduleSettings.closingTime,
               scheduleSettings.slotDurationMin,
-              scheduleSettings.breakBetweenMin,
+              0,
               scheduleSettings.basePrice,
             );
 

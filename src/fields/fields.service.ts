@@ -560,7 +560,7 @@ export class FieldsService {
       normalizedSettings.openingTime,
       normalizedSettings.closingTime,
       normalizedSettings.slotDurationMin,
-      normalizedSettings.breakBetweenMin,
+      0,
       normalizedSettings.basePrice,
     );
 
@@ -692,7 +692,7 @@ export class FieldsService {
       normalizedSettings.openingTime,
       normalizedSettings.closingTime,
       normalizedSettings.slotDurationMin,
-      normalizedSettings.breakBetweenMin,
+      0,
       normalizedSettings.basePrice,
     );
 
@@ -1043,7 +1043,11 @@ export class FieldsService {
       throw new BadRequestException("slotDurationMin must be a whole number");
     }
 
-    if (!Number.isInteger(createFieldScheduleSettingsDto.breakBetweenMin)) {
+    const breakBetweenMin = Number(
+      createFieldScheduleSettingsDto.breakBetweenMin ?? 0,
+    );
+
+    if (!Number.isInteger(breakBetweenMin)) {
       throw new BadRequestException("breakBetweenMin must be a whole number");
     }
 
@@ -1067,7 +1071,7 @@ export class FieldsService {
 
     return {
       slotDurationMin: createFieldScheduleSettingsDto.slotDurationMin,
-      breakBetweenMin: createFieldScheduleSettingsDto.breakBetweenMin,
+      breakBetweenMin,
       basePrice: basePrice.toFixed(2),
       openingTime,
       closingTime,
