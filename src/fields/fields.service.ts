@@ -427,6 +427,145 @@ export class FieldsService {
     });
   }
 
+  async getFieldSlotSummary(
+    fieldId: string,
+    dateRange?: { startDate?: string; endDate?: string },
+  ) {
+    const field = await this.fieldsRepository.findOne({
+      where: { id: fieldId, isActive: true },
+      relations: { scheduleSettings: true },
+    });
+
+    if (!field) {
+      throw new NotFoundException("Field not found");
+    }
+
+    const { startDate, endDate } = dateRange ?? {};
+    if ((startDate && !endDate) || (!startDate && endDate)) {
+      throw new BadRequestException(
+        "startDate and endDate must be provided together",
+      );
+    }
+
+    if (startDate && endDate && endDate < startDate) {
+      throw new BadRequestException("endDate must be on or after startDate");
+    }
+
+    const slotWhere =
+      startDate && endDate
+        ? {
+            fieldId,
+            slotDate: Between(startDate, endDate),
+          }
+        : { fieldId };
+
+    const slots = await this.fieldSlotsRepository.find({
+      where: slotWhere,
+      order: {
+        slotDate: "ASC",
+        startTime: "ASC",
+      },
+    });
+
+    const bookedSlotIds = slots
+      .filter((slot) => slot.status === "booked" || slot.status === "completed")
+      .map((slot) => slot.id);
+
+    let bookingMap: Record<string, any> = {};
+    if (bookedSlotIds.length > 0) {
+      const bookings = await this.bookingsRepository.find({
+        where: {
+          slotId: In(bookedSlotIds),
+        },
+        relations: {
+          user: true,
+        },
+      });
+
+      bookingMap = Object.fromEntries(
+        bookings
+          .filter((booking) => booking.user)
+          .map((booking) => [
+            booking.slotId,
+            {
+              id: booking.user.id,
+              name: booking.user.name,
+              baseAmount: booking.baseAmount,
+              totalAmount: booking.totalAmount,
+              discount: booking.discount,
+              bookingType: booking.bookingType,
+            },
+          ]),
+      );
+    }
+
+    const summary = slots.reduce(
+      (acc, slot) => {
+        acc.total += 1;
+        acc[slot.status] = (acc[slot.status] ?? 0) + 1;
+        return acc;
+      },
+      {
+        total: 0,
+        available: 0,
+        booked: 0,
+        completed: 0,
+        blocked: 0,
+        cancelled: 0,
+      } as Record<string, number>,
+    );
+
+    return {
+      field: {
+        id: field.id,
+        venueName: field.venueName,
+        fieldName: field.fieldName,
+        playerCapacity: field.playerCapacity,
+        city: field.city,
+        address: field.address,
+        description: field.description,
+        isActive: field.isActive,
+      },
+      scheduleSettings: field.scheduleSettings
+        ? {
+            id: field.scheduleSettings.id,
+            fieldId: field.scheduleSettings.fieldId,
+            slotDurationMin: field.scheduleSettings.slotDurationMin,
+            breakBetweenMin: field.scheduleSettings.breakBetweenMin,
+            basePrice: field.scheduleSettings.basePrice,
+            openingTime: field.scheduleSettings.openingTime,
+            closingTime: field.scheduleSettings.closingTime,
+            createdAt: field.scheduleSettings.createdAt,
+            updatedAt: field.scheduleSettings.updatedAt,
+          }
+        : null,
+      summary,
+      slots: slots.map((slot) => {
+        const result: any = {
+          id: slot.id,
+          fieldId: slot.fieldId,
+          slotDate: slot.slotDate,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          price: slot.price,
+          status: slot.status,
+          slotType: slot.slotType,
+          createdAt: slot.createdAt,
+          updatedAt: slot.updatedAt,
+        };
+
+        if (
+          (slot.status === "booked" || slot.status === "completed") &&
+          bookingMap[slot.id]
+        ) {
+          result.bookedBy = bookingMap[slot.id];
+        }
+
+        return result;
+      }),
+    };
+  }
+
   async getSlotById(fieldId: string, slotId: string) {
     // Verify the field is active (matches listSlotsByField visibility behavior)
     const field = await this.fieldsRepository.findOne({

@@ -15,6 +15,7 @@ import { Field } from "../fields/entities/field.entity";
 import { FieldSlot } from "../fields/entities/field-slot.entity";
 import { CreateBookingDto } from "./dto/create-booking.dto";
 import { ConfirmBookingDto } from "./dto/confirm-booking.dto";
+import { MembershipDaySchedule } from "./entities/membership-plan.entity";
 
 @Injectable()
 export class BookingService {
@@ -112,11 +113,17 @@ export class BookingService {
               startTime: slot.startTime,
             })
             .andWhere("plan.end_time = :endTime", { endTime: slot.endTime })
-            .andWhere("plan.start_date <= :slotDate", { slotDate: slot.slotDate })
+            .andWhere("plan.start_date <= :slotDate", {
+              slotDate: slot.slotDate,
+            })
             .andWhere("plan.active = true")
             .getMany()
             .then((plans) =>
-              plans.find((p) => p.daysOfWeek.includes(slotDayName)),
+              plans.find((p) =>
+                (p.daysOfWeek as MembershipDaySchedule[]).some(
+                  (schedule) => schedule.day === slotDayName,
+                ),
+              ),
             );
 
           if (matchingPlan) {

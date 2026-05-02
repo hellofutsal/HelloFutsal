@@ -1,0 +1,20 @@
+meta {
+  name: GetFieldSlotSummary
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{development}}/fields/{{fieldId}}/slot-summary?startDate=2026-04-06&endDate=2026-06-12
+  body: none
+  auth: none
+}
+
+query {
+  startDate: 2026-04-06
+  endDate: 2026-06-12
+}
+
+headers {
+  Content-Type: application/json
+}

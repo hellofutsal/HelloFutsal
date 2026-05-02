@@ -6,7 +6,10 @@ import { DateTime } from "luxon";
 import { Field } from "../entities/field.entity";
 import { FieldSlotGenerator } from "./field-slot-generator";
 import { FieldSlotSyncService } from "./field-slot-sync.service";
-import { MembershipPlan } from "../../booking/entities/membership-plan.entity";
+import {
+  MembershipDaySchedule,
+  MembershipPlan,
+} from "../../booking/entities/membership-plan.entity";
 import { Booking } from "../../booking/entities/booking.entity";
 import { FieldSlot } from "../entities/field-slot.entity";
 
