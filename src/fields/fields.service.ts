@@ -254,8 +254,18 @@ export class FieldsService {
     );
 
     const existingSlotKeys = new Set(existingSlots);
-    const slotsToCreate: Array<{ slotDate: string; startTime: string; endTime: string; price: string }> = [];
-    const slotsToImplement: Array<{ slotDate: string; startTime: string; endTime: string; price: string }> = [];
+    const slotsToCreate: Array<{
+      slotDate: string;
+      startTime: string;
+      endTime: string;
+      price: string;
+    }> = [];
+    const slotsToImplement: Array<{
+      slotDate: string;
+      startTime: string;
+      endTime: string;
+      price: string;
+    }> = [];
 
     normalizedSlots.forEach((slot) => {
       const slotKey = `${slot.slotDate} ${slot.startTime}`;
@@ -366,9 +376,6 @@ export class FieldsService {
         "slot.updated_at",
         "user.id as user_id",
         "user.name as user_name",
-        "user.mobile_number as user_mobile_number",
-        "user.username as user_username",
-        "user.email as user_email",
       ])
       .orderBy("slot.slot_date", "ASC")
       .addOrderBy("slot.start_time", "ASC")
@@ -383,20 +390,18 @@ export class FieldsService {
         endTime: slot.end_time,
         price: slot.price,
         status: slot.status,
-        slotType: slot.slot_type || slot.status,
+        slotType: (slot.slot_type as string) || "normal",
         createdAt: slot.created_at,
         updatedAt: slot.updated_at,
       };
 
       // Add user data only if slot is booked and has user information
+      // Only include non-PII fields (id and name) on public endpoint
       if (slot.status === "booked" || slot.status === "completed") {
         if (slot.user_id) {
           result.user = {
             id: slot.user_id,
             name: slot.user_name,
-            mobileNumber: slot.user_mobile_number,
-            username: slot.user_username,
-            email: slot.user_email,
           };
         }
       }
@@ -1212,55 +1217,65 @@ export class FieldsService {
 
   private async implementExistingSlots(
     fieldId: string,
-    slots: Array<{ slotDate: string; startTime: string; endTime: string; price: string }>,
+    slots: Array<{
+      slotDate: string;
+      startTime: string;
+      endTime: string;
+      price: string;
+    }>,
   ): Promise<void> {
     if (slots.length === 0) {
       return;
     }
 
-    await this.fieldSlotsRepository.manager.transaction(
-      async (manager) => {
-        const repository = manager.getRepository(FieldSlot);
-        
-        for (const slot of slots) {
-          // First check current slot state
-          const existingSlot = await repository.findOne({
-            where: {
+    await this.fieldSlotsRepository.manager.transaction(async (manager) => {
+      const repository = manager.getRepository(FieldSlot);
+
+      for (const slot of slots) {
+        // First check current slot state
+        const existingSlot = await repository.findOne({
+          where: {
+            fieldId,
+            slotDate: slot.slotDate,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+          },
+        });
+
+        if (!existingSlot) {
+          continue; // Skip if slot doesn't exist
+        }
+
+        // Only change slots that are genuinely inactive (blocked or cancelled)
+        if (
+          (existingSlot.status === "blocked" ||
+            existingSlot.status === "cancelled") &&
+          existingSlot.slotType !== "membership"
+        ) {
+          await repository.update(
+            {
               fieldId,
               slotDate: slot.slotDate,
               startTime: slot.startTime,
               endTime: slot.endTime,
             },
-          });
-
-          if (!existingSlot) {
-            continue; // Skip if slot doesn't exist
-          }
-
-          // Only change slots that are genuinely inactive (blocked or cancelled)
-          if ((existingSlot.status === "blocked" || existingSlot.status === "cancelled") && existingSlot.slotType !== "membership") {
-            await repository.update(
-              {
-                fieldId,
-                slotDate: slot.slotDate,
-                startTime: slot.startTime,
-                endTime: slot.endTime,
-              },
-              {
-                status: "available",
-                slotType: "normal",
-                price: slot.price,
-              },
-            );
-          } else if (existingSlot.status !== "blocked" && existingSlot.status !== "cancelled") {
-            // Throw error when slot is already reserved/booked/membership
-            throw new ConflictException(
-              `Cannot reopen slot ${slot.slotDate} ${slot.startTime}-${slot.endTime}: slot is already ${existingSlot.status} with type ${existingSlot.slotType}`
-            );
-          }
+            {
+              status: "available",
+              slotType: "normal",
+              price: slot.price,
+            },
+          );
+        } else if (
+          existingSlot.status !== "blocked" &&
+          existingSlot.status !== "cancelled"
+        ) {
+          // Throw error when slot is already reserved/booked/membership
+          throw new ConflictException(
+            `Cannot reopen slot ${slot.slotDate} ${slot.startTime}-${slot.endTime}: slot is already ${existingSlot.status} with type ${existingSlot.slotType}`,
+          );
         }
-      },
-    );
+      }
+    });
   }
 
   private async ensureVenueFieldPairIsAvailable(
