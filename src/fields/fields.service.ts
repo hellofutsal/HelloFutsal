@@ -354,32 +354,61 @@ export class FieldsService {
       .where("slot.field_id = :fieldId", { fieldId });
 
     if (startDate && endDate) {
-      queryBuilder.andWhere("slot.slot_date BETWEEN :startDate AND :endDate", {
-        startDate,
-        endDate,
-      });
+      queryBuilder.andWhere(
+        "slot.slot_date >= :startDate AND slot.slot_date <= :endDate",
+        {
+          startDate,
+          endDate,
+        },
+      );
     }
 
     const slots = await queryBuilder
-      .leftJoin("booking", "booking", "booking.slot_id = slot.id")
-      .leftJoin("user_account", "user", "user.id = booking.user_id")
-      .select([
-        "slot.id",
-        "slot.field_id",
-        "slot.slot_date",
-        "slot.start_time",
-        "slot.end_time",
-        "slot.price",
-        "slot.status",
-        "slot.slot_type",
-        "slot.created_at",
-        "slot.updated_at",
-        "user.id as user_id",
-        "user.name as user_name",
-      ])
+      .select("slot.id")
+      .addSelect("slot.field_id")
+      .addSelect("slot.slot_date")
+      .addSelect("slot.start_time")
+      .addSelect("slot.end_time")
+      .addSelect("slot.price")
+      .addSelect("slot.status")
+      .addSelect("slot.slot_type")
+      .addSelect("slot.created_at")
+      .addSelect("slot.updated_at")
       .orderBy("slot.slot_date", "ASC")
       .addOrderBy("slot.start_time", "ASC")
       .getRawMany();
+
+    // For booked slots, fetch user data separately
+    const bookedSlotIds = slots
+      .filter((s) => s.status === "booked" || s.status === "completed")
+      .map((s) => s.id);
+
+    let userDataMap: any = {};
+    if (bookedSlotIds.length > 0) {
+      const bookings = await this.fieldSlotsRepository
+        .createQueryBuilder("slot")
+        .innerJoin("booking", "booking", "booking.slot_id = slot.id")
+        .innerJoin("user_account", "user", "user.id = booking.user_id")
+        .select("slot.id", "slot_id")
+        .addSelect("user.id", "user_id")
+        .addSelect("user.name", "user_name")
+        .addSelect("user.mobile_number", "user_mobile_number")
+        .addSelect("user.username", "user_username")
+        .where("slot.id IN (:...slotIds)", { slotIds: bookedSlotIds })
+        .getRawMany();
+
+      userDataMap = Object.fromEntries(
+        bookings.map((b) => [
+          b.slot_id,
+          {
+            id: b.user_id,
+            name: b.user_name,
+            mobileNumber: b.user_mobile_number,
+            username: b.user_username,
+          },
+        ]),
+      );
+    }
 
     return slots.map((slot) => {
       const result: any = {
@@ -390,20 +419,17 @@ export class FieldsService {
         endTime: slot.end_time,
         price: slot.price,
         status: slot.status,
-        slotType: (slot.slot_type as string) || "normal",
+        slotType: slot.slot_type || "normal",
         createdAt: slot.created_at,
         updatedAt: slot.updated_at,
       };
 
-      // Add user data only if slot is booked and has user information
-      // Only include non-PII fields (id and name) on public endpoint
-      if (slot.status === "booked" || slot.status === "completed") {
-        if (slot.user_id) {
-          result.user = {
-            id: slot.user_id,
-            name: slot.user_name,
-          };
-        }
+      // If slot is booked/completed, include user booking details
+      if (
+        (slot.status === "booked" || slot.status === "completed") &&
+        userDataMap[slot.id]
+      ) {
+        result.bookedBy = userDataMap[slot.id];
       }
 
       return result;
