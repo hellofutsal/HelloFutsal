@@ -11,12 +11,17 @@ import { UserAccount } from "../../auth/entities/user.entity";
 import { Field } from "../../fields/entities/field.entity";
 
 /**
- * Flexible membership day schedule: each day can have independent start/end times
+ * Flexible membership day schedule: each day can have multiple start/end windows.
  */
-export interface MembershipDaySchedule {
-  day: string; // "monday", "tuesday", etc.
+export interface MembershipTimeWindow {
   startTime: string; // HH:mm format
   endTime: string; // HH:mm format
+}
+
+export interface MembershipDaySchedule {
+  day: string; // "monday", "tuesday", etc.
+  startTime: string[]; // HH:mm format
+  endTime: string[]; // HH:mm format
   startDate: string; // YYYY-MM-DD
   monthlyPrice: string; // stored as numeric string (precision handled by plan.monthly_price)
 }
@@ -41,7 +46,7 @@ export class MembershipPlan {
   field!: Field;
 
   @Column({ name: "days_of_week", type: "jsonb" })
-  daysOfWeek!: MembershipDaySchedule[]; // e.g., [{day: "sunday", startTime: "08:00", endTime: "09:00"}]
+  daysOfWeek!: MembershipDaySchedule[]; // e.g., [{day: "sunday", startTime: ["08:00"], endTime: ["09:00"]}]
 
   /**
    * Start date from which this membership plan becomes active.

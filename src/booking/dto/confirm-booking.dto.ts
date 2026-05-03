@@ -1,5 +1,12 @@
 import { Transform } from "class-transformer";
-import { IsBoolean, IsNumber, IsOptional, Min, Max, ValidateIf } from "class-validator";
+import {
+  IsBoolean,
+  IsNumber,
+  IsOptional,
+  Min,
+  Max,
+  ValidateIf,
+} from "class-validator";
 
 // Max value for numeric(12,2) is 9999999999.99
 const MAX_TOTAL_AMOUNT = 9999999999.99;
@@ -7,7 +14,7 @@ const MAX_TOTAL_AMOUNT = 9999999999.99;
 export class ConfirmBookingDto {
   @IsOptional()
   @Transform(({ value }) => {
-    if (value === undefined || value === null) return false;
+    if (value === undefined || value === null) return undefined;
     if (typeof value === "string") {
       const trimmed = value.trim();
       if (trimmed === "") return false;
@@ -16,7 +23,7 @@ export class ConfirmBookingDto {
     return Boolean(value);
   })
   @IsBoolean({ message: "discount must be a boolean value" })
-  discount?: boolean = false;
+  discount?: boolean;
 
   @IsOptional()
   @Transform(({ value }) => {

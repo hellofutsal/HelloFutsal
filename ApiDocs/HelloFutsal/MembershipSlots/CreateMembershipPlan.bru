@@ -20,27 +20,38 @@ auth:bearer {
 
 body:json {
   {
-    "userName": "Ayush Morning Slot 2",
+    "userName": "Ayush Morning Slot 1",
     "phoneNumber": "9867654567",
     "fieldId": "{{fieldId}}",
-    "daysOfWeek": [
+    "slots": [
       {
-        "day": "saturday",
-        "startTime": "06:00",
-        "endTime": "07:00",
-  "startDate": "2026-05-02",
-          "monthlyPrice": 1000.00
+        "day": "monday",
+        "startDate": "2026-05-02",
+        "slots": [
+          {
+            "startTime": "05:00",
+            "endTime": "06:00",
+            "monthlyPrice": 2000
+          },
+          {
+            "startTime": "06:00",
+            "endTime": "07:00",
+            "monthlyPrice": 2000
+          }
+        ]
       },
       {
         "day": "sunday",
-        "startTime": "07:00",
-        "endTime": "08:00",
-  "startDate": "2026-05-02",
-          "monthlyPrice": 1000.00
+        "startDate": "2026-05-02",
+        "slots": [
+          {
+            "startTime": "07:00",
+            "endTime": "08:00",
+            "monthlyPrice": 2000
+          }
+        ]
       }
     ],
-    
-  
     "active": true
   }
 }
@@ -55,25 +66,25 @@ docs {
   - `userName` (string): Name of the membership user
   - `phoneNumber` (string): Phone number of the membership user
   - `fieldId` (uuid): ID of the field this membership is for
-  - `daysOfWeek` (array): Array of day schedules with individual times:
+  - `slots` (array): Array of day schedules:
     - `day` (string): Day name (sunday, monday, tuesday, wednesday, thursday, friday, saturday)
-    - `startTime` (string): Start time in HH:mm format (e.g., "08:00")
-    - `endTime` (string): End time in HH:mm format (e.g., "09:00")
-  - `startDate` (string): Start date in YYYY-MM-DD format
-  - `monthlyPrice` (number): Monthly price for the membership
+    - `startDate` (string): Start date in YYYY-MM-DD format
+    - `slots` (array): Array of time windows for that day:
+      - `startTime` (string): Start time in HH:mm format
+      - `endTime` (string): End time in HH:mm format
+      - `monthlyPrice` (number): Hourly price entered by user (converted to monthly internally as hourlyPrice * 30)
   - `active` (boolean, optional): Whether the membership is active (default: true)
   
   ## Example Usage
   
-  A user can choose different times for different days:
-  - Saturday: 08:00-09:00
-  - Sunday: 09:00-10:00
-  - Monday: 08:00-09:00
+  Multiple days with different time windows:
+  - Saturday: 17:00-18:00, 18:00-19:00 (each with monthlyPrice)
+  - Sunday: 07:00-08:00
   
   ## Response
   
   Returns the created membership plan with:
-  - `plan`: The membership plan object with perSlotPrice (monthlyPrice / 30)
+  - `plan`: The membership plan object with monthly pricing derived from the submitted hourly slot price
   - `syncedSlots`: Number of slots that were automatically synced and booked
   - `success`: Boolean indicating success
   

@@ -77,6 +77,24 @@ export class Booking {
   })
   totalAmount!: string;
 
+  @Column({
+    name: "extra_amount",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  extraAmount!: string;
+
+  @Column({
+    name: "discount_amount",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  discountAmount!: string;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 

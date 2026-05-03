@@ -16,6 +16,7 @@ import { FieldSlot } from "../fields/entities/field-slot.entity";
 import { CreateBookingDto } from "./dto/create-booking.dto";
 import { ConfirmBookingDto } from "./dto/confirm-booking.dto";
 import { MembershipDaySchedule } from "./entities/membership-plan.entity";
+import { getMembershipTimeWindows } from "./membership-plan-schedule.utils";
 
 @Injectable()
 export class BookingService {
@@ -119,8 +120,11 @@ export class BookingService {
                 (p.daysOfWeek as MembershipDaySchedule[]).some(
                   (schedule) =>
                     schedule.day === slotDayName &&
-                    schedule.startTime === slot.startTime &&
-                    schedule.endTime === slot.endTime,
+                    getMembershipTimeWindows(schedule).some(
+                      (window) =>
+                        window.startTime === slot.startTime &&
+                        window.endTime === slot.endTime,
+                    ),
                 ),
               ),
             );
@@ -159,6 +163,8 @@ export class BookingService {
               bookingType: booking.bookingType,
               baseAmount: this.formatAmount(slot.price),
               totalAmount: this.sumAmounts(slot.price, booking.totalAmount),
+              extraAmount: this.formatAmount(0),
+              discountAmount: this.formatAmount(0),
             },
             slot: {
               id: slot.id,
@@ -237,26 +243,51 @@ export class BookingService {
       }
 
       const baseAmount = Number(slot.price);
-      const totalAmount = Number(confirmBookingDto.totalAmount ?? 0);
+      const providedTotal = confirmBookingDto.totalAmount;
+      const totalAmount =
+        providedTotal === undefined ? baseAmount : Number(providedTotal);
 
-      // Validate discount logic
-      if (!confirmBookingDto.discount && totalAmount < baseAmount) {
-        throw new ConflictException(
-          "Total amount cannot be less than base amount. Please toggle on the discount button to apply discount.",
-        );
+      // If discount flag provided explicitly, validate consistency; otherwise infer it.
+      if (confirmBookingDto.discount === undefined) {
+        if (totalAmount < baseAmount) {
+          booking.discount = true;
+          booking.discountAmount = this.formatAmount(baseAmount - totalAmount);
+          booking.extraAmount = this.formatAmount(0);
+        } else if (totalAmount > baseAmount) {
+          booking.discount = false;
+          booking.extraAmount = this.formatAmount(totalAmount - baseAmount);
+          booking.discountAmount = this.formatAmount(0);
+        } else {
+          booking.discount = false;
+          booking.extraAmount = this.formatAmount(0);
+          booking.discountAmount = this.formatAmount(0);
+        }
+      } else {
+        // explicit flag: validate
+        if (confirmBookingDto.discount && totalAmount >= baseAmount) {
+          throw new ConflictException(
+            "When discount is enabled, total amount should be less than base amount.",
+          );
+        }
+
+        if (!confirmBookingDto.discount && totalAmount < baseAmount) {
+          throw new ConflictException(
+            "Total amount cannot be less than base amount. Please toggle on the discount button to apply discount.",
+          );
+        }
+
+        booking.discount = confirmBookingDto.discount;
+        if (booking.discount) {
+          booking.discountAmount = this.formatAmount(baseAmount - totalAmount);
+          booking.extraAmount = this.formatAmount(0);
+        } else {
+          booking.extraAmount = this.formatAmount(totalAmount - baseAmount);
+          booking.discountAmount = this.formatAmount(0);
+        }
       }
 
-      if (confirmBookingDto.discount && totalAmount >= baseAmount) {
-        throw new ConflictException(
-          "When discount is enabled, total amount should be less than base amount.",
-        );
-      }
-
-      booking.discount = confirmBookingDto.discount ?? false;
       booking.baseAmount = this.formatAmount(slot.price);
-      booking.totalAmount = this.formatAmount(
-        confirmBookingDto.totalAmount ?? 0,
-      );
+      booking.totalAmount = this.formatAmount(totalAmount);
       booking.status = "completed";
       await bookingRepository.save(booking);
 
@@ -274,6 +305,8 @@ export class BookingService {
           discount: booking.discount,
           baseAmount: booking.baseAmount,
           totalAmount: booking.totalAmount,
+          extraAmount: booking.extraAmount,
+          discountAmount: booking.discountAmount,
         },
         slot: {
           id: slot.id,
@@ -324,6 +357,8 @@ export class BookingService {
         discount: booking.discount,
         baseAmount: booking.baseAmount,
         totalAmount: booking.totalAmount,
+        extraAmount: booking.extraAmount,
+        discountAmount: booking.discountAmount,
         createdAt: booking.createdAt,
         updatedAt: booking.updatedAt,
       },
@@ -376,6 +411,8 @@ export class BookingService {
         discount: booking.discount,
         baseAmount: booking.baseAmount,
         totalAmount: booking.totalAmount,
+        extraAmount: booking.extraAmount,
+        discountAmount: booking.discountAmount,
         createdAt: booking.createdAt,
         updatedAt: booking.updatedAt,
       },

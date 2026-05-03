@@ -17,6 +17,7 @@ import {
 import {
   CreateMembershipPlanDto,
   MembershipDayScheduleDto,
+  MembershipTimeWindowDto,
 } from "./dto/create-membership-plan.dto";
 import { UserAccount } from "../auth/entities/user.entity";
 import { Field } from "../fields/entities/field.entity";
@@ -25,6 +26,7 @@ import { Booking } from "./entities/booking.entity";
 import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
+import { getMembershipTimeWindows } from "./membership-plan-schedule.utils";
 
 @Controller("membership-plans")
 export class MembershipPlanController {
@@ -42,12 +44,11 @@ export class MembershipPlanController {
   ) {}
 
   /**
-   * Computes the per-slot membership price from a monthly price.
-   * Formula: monthlyPrice / 30  (1 month = 30 days, 1 day = 1 slot time-block)
+   * Converts user-entered hourly price to monthly price for plan storage.
+   * Formula: hourlyPrice * 30
    */
-  private computeSlotPrice(monthlyPrice: number): string {
-    const perSlot = monthlyPrice / 30;
-    return perSlot.toFixed(2);
+  private computeMonthlyPriceFromHourly(hourlyPrice: number): string {
+    return (hourlyPrice * 30).toFixed(2);
   }
 
   /**
@@ -86,6 +87,33 @@ export class MembershipPlanController {
     }
   }
 
+  private transformSlotsToLegacyFormat(
+    daySchedules: MembershipDayScheduleDto[],
+  ): MembershipDaySchedule[] {
+    // Transform new nested format into legacy daysOfWeek format for storage
+    return daySchedules.map((day) => {
+      const hourlyPrice = day.slots[0].monthlyPrice;
+
+      const hasMixedHourlyPrice = day.slots.some(
+        (slot) => slot.monthlyPrice !== hourlyPrice,
+      );
+
+      if (hasMixedHourlyPrice) {
+        throw new BadRequestException(
+          `All slots for ${day.day} must have the same hourly price`,
+        );
+      }
+
+      return {
+        day: day.day,
+        startDate: day.startDate,
+        startTime: day.slots.map((s) => s.startTime),
+        endTime: day.slots.map((s) => s.endTime),
+        monthlyPrice: this.computeMonthlyPriceFromHourly(hourlyPrice),
+      };
+    });
+  }
+
   /**
    * Checks if two time ranges overlap
    */
@@ -104,6 +132,8 @@ export class MembershipPlanController {
     @Body() dto: CreateMembershipPlanDto,
     @CurrentAccount() currentUser: AuthenticatedAccount,
   ) {
+    const membershipSchedules = dto.slots;
+
     // Verify field ownership before proceeding
     const field = await this.fieldRepo.findOne({
       where: { id: dto.fieldId, ownerId: currentUser.id },
@@ -116,9 +146,11 @@ export class MembershipPlanController {
     }
 
     // Validate all day/time windows
-    for (const daySchedule of dto.daysOfWeek) {
-      this.validateTimeWindow(daySchedule.startTime, daySchedule.endTime);
-      // validate startDate and monthlyPrice presence will be enforced by DTO
+    for (const daySchedule of membershipSchedules) {
+      // Validate each time window in the day
+      for (const timeWindow of daySchedule.slots) {
+        this.validateTimeWindow(timeWindow.startTime, timeWindow.endTime);
+      }
     }
 
     // Find or create user by phone number
@@ -156,7 +188,7 @@ export class MembershipPlanController {
             existingPlan.daysOfWeek as MembershipDaySchedule[];
 
           // Check each new day schedule against existing schedules
-          for (const newDaySchedule of dto.daysOfWeek) {
+          for (const newDaySchedule of membershipSchedules) {
             // Find all existing schedules for this day
             const existingForThisDay = existingDays.filter(
               (sch) => sch.day === newDaySchedule.day,
@@ -164,43 +196,45 @@ export class MembershipPlanController {
 
             if (existingForThisDay.length === 0) continue;
 
-            // new schedule time window
-            const newStart = this.parseTimeToMinutes(newDaySchedule.startTime);
-            const newEnd = this.parseTimeToMinutes(newDaySchedule.endTime);
+            const newWindows = newDaySchedule.slots;
 
             for (const existingDaySchedule of existingForThisDay) {
-              const existingStart = this.parseTimeToMinutes(
-                existingDaySchedule.startTime,
-              );
-              const existingEnd = this.parseTimeToMinutes(
-                existingDaySchedule.endTime,
-              );
+              const existingWindows =
+                getMembershipTimeWindows(existingDaySchedule);
 
-              if (
-                this.timeRangesOverlap(
-                  newStart,
-                  newEnd,
-                  existingStart,
-                  existingEnd,
-                )
-              ) {
-                throw new ConflictException(
-                  `Membership plan conflicts with existing plan on ${newDaySchedule.day} at ${existingDaySchedule.startTime}-${existingDaySchedule.endTime}. Please choose a different time range.`,
-                );
+              for (const newWindow of newWindows) {
+                const newStart = this.parseTimeToMinutes(newWindow.startTime);
+                const newEnd = this.parseTimeToMinutes(newWindow.endTime);
+
+                for (const existingWindow of existingWindows) {
+                  const existingStart = this.parseTimeToMinutes(
+                    existingWindow.startTime,
+                  );
+                  const existingEnd = this.parseTimeToMinutes(
+                    existingWindow.endTime,
+                  );
+
+                  if (
+                    this.timeRangesOverlap(
+                      newStart,
+                      newEnd,
+                      existingStart,
+                      existingEnd,
+                    )
+                  ) {
+                    throw new ConflictException(
+                      `Membership plan conflicts with existing plan on ${newDaySchedule.day} at ${existingWindow.startTime}-${existingWindow.endTime}. Please choose a different time range.`,
+                    );
+                  }
+                }
               }
             }
           }
         }
 
-        // Create membership plan with flexible day schedules
-        // Transform per-day monthlyPrice to string and compute aggregate values
-        const daysWithStrings = dto.daysOfWeek.map((d) => ({
-          day: d.day,
-          startTime: d.startTime,
-          endTime: d.endTime,
-          startDate: d.startDate,
-          monthlyPrice: d.monthlyPrice.toFixed(2),
-        }));
+        // Transform new nested format to legacy storage format
+        const daysWithStrings =
+          this.transformSlotsToLegacyFormat(membershipSchedules);
 
         // Set plan-level startDate to earliest startDate among days
         const earliestStart = daysWithStrings.reduce(
@@ -262,7 +296,7 @@ export class MembershipPlanController {
             const slotDayName = dayNames[slotDateObj.getDay()];
 
             // Find ALL matching day schedules for this slot (same day can have multiple time windows)
-            const matchingDaySchedules = dto.daysOfWeek.filter(
+            const matchingDaySchedules = membershipSchedules.filter(
               (sch) => sch.day === slotDayName,
             );
 
@@ -277,21 +311,33 @@ export class MembershipPlanController {
 
             // Find a matching schedule for this slot's time window
             let matchingDaySchedule: MembershipDayScheduleDto | null = null;
+            let matchingTimeWindow: MembershipTimeWindowDto | null = null;
             for (const schedule of matchingDaySchedules) {
-              const scheduleStart = this.parseTimeToMinutes(schedule.startTime);
-              const scheduleEnd = this.parseTimeToMinutes(schedule.endTime);
+              const timeWindows = schedule.slots;
 
-              if (slotStart === scheduleStart && slotEnd === scheduleEnd) {
-                // Also check that the slot date is on or after this schedule's start date
-                const slotDateStr = slot.slotDate;
-                if (slotDateStr >= schedule.startDate) {
-                  matchingDaySchedule = schedule;
-                  break;
+              for (const timeWindow of timeWindows) {
+                const scheduleStart = this.parseTimeToMinutes(
+                  timeWindow.startTime,
+                );
+                const scheduleEnd = this.parseTimeToMinutes(timeWindow.endTime);
+
+                if (slotStart === scheduleStart && slotEnd === scheduleEnd) {
+                  // Also check that the slot date is on or after this schedule's start date
+                  const slotDateStr = slot.slotDate;
+                  if (slotDateStr >= schedule.startDate) {
+                    matchingDaySchedule = schedule;
+                    matchingTimeWindow = timeWindow;
+                    break;
+                  }
                 }
+              }
+
+              if (matchingDaySchedule) {
+                break;
               }
             }
 
-            if (!matchingDaySchedule) {
+            if (!matchingDaySchedule || !matchingTimeWindow) {
               // No matching time window for this slot or slot is before schedule start date
               continue;
             }
@@ -306,10 +352,9 @@ export class MembershipPlanController {
 
             if (!lockedSlot || lockedSlot.status !== "available") continue;
 
-            // Compute per-day membership slot price
-            const membershipSlotPrice = this.computeSlotPrice(
-              matchingDaySchedule.monthlyPrice,
-            );
+            // User submits hourly price; use it directly as slot price.
+            const membershipSlotPrice =
+              matchingTimeWindow.monthlyPrice.toFixed(2);
 
             // Apply membership pricing and mark as booked
             lockedSlot.status = "booked";

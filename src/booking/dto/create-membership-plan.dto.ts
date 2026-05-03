@@ -17,7 +17,28 @@ import { Type } from "class-transformer";
 import { DateYYYYMMDDConstraint } from "./date-yyyymmdd.constraint";
 
 /**
- * Flexible day schedule: each day can have independent start/end times
+ * A single time window (slot) with its own pricing
+ */
+export class MembershipTimeWindowDto {
+  @IsString()
+  @Matches(/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/, {
+    message: "startTime must be in HH:mm format",
+  })
+  startTime!: string;
+
+  @IsString()
+  @Matches(/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/, {
+    message: "endTime must be in HH:mm format",
+  })
+  endTime!: string;
+
+  @IsNumber()
+  @IsPositive()
+  monthlyPrice!: number;
+}
+
+/**
+ * Day schedule: a day with multiple time windows (slots)
  */
 export class MembershipDayScheduleDto {
   @IsString()
@@ -33,24 +54,14 @@ export class MembershipDayScheduleDto {
   day!: string;
 
   @IsString()
-  @Matches(/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/, {
-    message: "startTime must be in HH:mm format",
-  })
-  startTime!: string;
-
-  @IsString()
-  @Matches(/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/, {
-    message: "endTime must be in HH:mm format",
-  })
-  endTime!: string;
-
-  @IsString()
   @Validate(DateYYYYMMDDConstraint)
   startDate!: string;
 
-  @IsNumber()
-  @IsPositive()
-  monthlyPrice!: number;
+  @IsArray()
+  @ArrayNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => MembershipTimeWindowDto)
+  slots!: MembershipTimeWindowDto[];
 }
 
 export class CreateMembershipPlanDto {
@@ -68,7 +79,7 @@ export class CreateMembershipPlanDto {
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => MembershipDayScheduleDto)
-  daysOfWeek!: MembershipDayScheduleDto[]; // e.g., [{day: "sunday", startTime: "08:00", endTime: "09:00"}]
+  slots!: MembershipDayScheduleDto[]; // array of day schedules, each with nested time windows
 
   @IsOptional()
   @IsBoolean()
