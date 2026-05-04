@@ -169,7 +169,15 @@ export class FieldSlotCronService {
         plan.daysOfWeek as unknown as MembershipDaySchedule[];
 
       for (const daySchedule of planDaySchedules) {
-        const timeWindows = getMembershipTimeWindows(daySchedule);
+        let timeWindows: any[];
+        try {
+          timeWindows = getMembershipTimeWindows(daySchedule);
+        } catch (error) {
+          this.logger.error(
+            `Failed to get time windows for day schedule: ${JSON.stringify(daySchedule)} - ${error}`,
+          );
+          continue;
+        }
 
         for (const upcomingDate of upcomingDates) {
           const upcomingDateTime = DateTime.fromISO(upcomingDate, {
@@ -192,6 +200,8 @@ export class FieldSlotCronService {
               if (otherPlan.id === plan.id) return false;
               if (!otherPlan.field || otherPlan.field.id !== plan.field.id)
                 return false;
+              // Skip plans that haven't started by the upcoming date
+              if (upcomingDate < otherPlan.startDate) return false;
 
               const otherSchedules = (otherPlan.daysOfWeek as any[]) || [];
               return otherSchedules.some((s) => {

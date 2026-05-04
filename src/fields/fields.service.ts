@@ -470,6 +470,7 @@ export class FieldsService {
         // Collect each selected time window from this membership
         const dayTimeSchedules = daysOfWeek.flatMap((d) =>
           getMembershipTimeWindows(d).map((timeWindow) => ({
+            planId: plan.id,
             day: d.day,
             startTime: timeWindow.startTime,
             endTime: timeWindow.endTime,

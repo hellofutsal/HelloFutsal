@@ -26,14 +26,14 @@ export class MembershipPayment {
   @Column({ name: "membership_plan_id", type: "uuid" })
   membershipPlanId!: string;
 
-  @ManyToOne(() => MembershipPlan, { onDelete: "CASCADE" })
+  @ManyToOne(() => MembershipPlan, { onDelete: "RESTRICT" })
   @JoinColumn({ name: "membership_plan_id" })
   membershipPlan!: MembershipPlan;
 
   @Column({ name: "field_id", type: "uuid" })
   fieldId!: string;
 
-  @ManyToOne(() => Field, { onDelete: "CASCADE" })
+  @ManyToOne(() => Field, { onDelete: "RESTRICT" })
   @JoinColumn({ name: "field_id" })
   field!: Field;
 
@@ -47,7 +47,7 @@ export class MembershipPayment {
   @Column({ name: "user_id", type: "uuid" })
   userId!: string;
 
-  @ManyToOne(() => UserAccount, { onDelete: "CASCADE" })
+  @ManyToOne(() => UserAccount, { onDelete: "RESTRICT" })
   @JoinColumn({ name: "user_id" })
   user!: UserAccount;
 

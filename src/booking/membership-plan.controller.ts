@@ -178,11 +178,30 @@ export class MembershipPlanController {
       );
     }
 
-    // Validate all day/time windows
+    // Validate all day/time windows and check for intra-request overlaps
     for (const daySchedule of membershipSchedules) {
       // Validate each time window in the day
       for (const timeWindow of daySchedule.slots) {
         this.validateTimeWindow(timeWindow.startTime, timeWindow.endTime);
+      }
+
+      // Check for overlaps between slots within the same day
+      const slots = daySchedule.slots || [];
+      for (let i = 0; i < slots.length; i++) {
+        for (let j = i + 1; j < slots.length; j++) {
+          const slot1 = slots[i];
+          const slot2 = slots[j];
+          if (
+            !(
+              slot1.endTime <= slot2.startTime ||
+              slot2.endTime <= slot1.startTime
+            )
+          ) {
+            throw new BadRequestException(
+              `Overlapping time windows in ${daySchedule.day}: ${slot1.startTime}-${slot1.endTime} overlaps with ${slot2.startTime}-${slot2.endTime}`,
+            );
+          }
+        }
       }
     }
 
