@@ -279,10 +279,10 @@ export class MembershipPlanController {
           phoneNumber: dto.phoneNumber,
           perSlotPrice: dto.perSlotPrice.toFixed(2),
         });
-        await manager.save(plan);
+        const savedPlan = await manager.save(plan);
 
         let syncedCount = 0;
-        if (plan.active) {
+        if (savedPlan.active) {
           // Sync with existing slots: find all future available slots for this field
           const allSlots = await manager
             .getRepository(FieldSlot)
@@ -375,13 +375,14 @@ export class MembershipPlanController {
             // Apply membership pricing and mark as booked
             lockedSlot.status = "booked";
             lockedSlot.slotType = "membership";
-            lockedSlot.price = membershipSlotPrice; // override price with membership rate
+            lockedSlot.price = membershipSlotPrice;
+            lockedSlot.membershipPlanId = savedPlan.id;
             await manager.save(FieldSlot, lockedSlot);
 
-            // Create booking record
+            // Create booking record with proper relationships
             const booking = manager.create(Booking, {
               fieldId: field.id,
-              slotId: slot.id,
+              slotId: lockedSlot.id,
               userId: user!.id,
               status: "booked",
               totalAmount: "0",
@@ -395,7 +396,7 @@ export class MembershipPlanController {
         return {
           success: true,
           plan: {
-            ...plan,
+            ...savedPlan,
           },
           syncedSlots: syncedCount,
         };

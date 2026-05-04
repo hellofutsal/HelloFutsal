@@ -132,6 +132,7 @@ export class BookingService {
           if (matchingPlan) {
             slot.price = matchingPlan.perSlotPrice;
             slot.slotType = "membership";
+            slot.membershipPlanId = matchingPlan.id;
             bookingType = "membership";
           }
           // ---------------------------------------------------------------------------

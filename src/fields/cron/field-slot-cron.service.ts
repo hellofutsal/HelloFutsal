@@ -75,7 +75,6 @@ export class FieldSlotCronService {
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, {
     timeZone: "Asia/Kathmandu",
   })
-  // @Cron("*/1 * * * *")
   async generateTomorrowSlotsAndBookMemberships(): Promise<void> {
     // 1. Roll/Create slots as before
     const fields = await this.fieldsRepository.find({
@@ -288,6 +287,7 @@ export class FieldSlotCronService {
                   if (!slot) return false;
 
                   slot.price = perSlotPrice;
+                  slot.membershipPlanId = plan.id;
 
                   // If slot is booked for non-membership, override it with membership booking
                   if (
@@ -365,14 +365,15 @@ export class FieldSlotCronService {
                     userId: plan.user.id,
                     fieldId: plan.field.id,
                     date: upcomingDate,
-                    action: "created",
+                    action: "updated",
+                    bookingCreated: true,
                   };
                 },
               );
 
               if (booked) {
-                if (booked.action === "created") membershipCreated++;
-                else membershipProcessed++;
+                if (booked.bookingCreated) membershipCreated++;
+                if (booked.action === "updated") membershipProcessed++;
                 this.logger.log(
                   `${booked.action === "updated" ? "Updated" : booked.action === "overridden" ? "Overridden" : "Created"} membership booking for slot ${booked.slotId} user ${booked.userId} on field ${booked.fieldId} for date ${booked.date}`,
                 );
