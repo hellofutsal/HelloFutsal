@@ -142,12 +142,11 @@ export class MembershipPaymentService {
 
           lockedBooking.status = "completed";
           lockedBooking.bookingType = "membership";
-          lockedBooking.baseAmount = plan.perSlotPrice;
-          lockedBooking.totalAmount = plan.perSlotPrice;
+          lockedBooking.baseAmount = lockedSlot.price;
+          lockedBooking.totalAmount = lockedSlot.price;
 
           lockedSlot.status = "completed";
           lockedSlot.slotType = "membership";
-          lockedSlot.price = plan.perSlotPrice;
           lockedSlot.membershipPlanId = plan.id;
 
           await bookingRepo.save(lockedBooking);
@@ -161,7 +160,7 @@ export class MembershipPaymentService {
             periodStartDate: lockedSlot.slotDate,
             periodEndDate: lockedSlot.slotDate,
             paymentStatus: "paid",
-            totalAmount: Number(plan.perSlotPrice).toFixed(2),
+            totalAmount: Number(lockedSlot.price).toFixed(2),
             confirmedSlotIds: [lockedSlot.id],
             confirmedBookingIds: [lockedBooking.id],
             confirmedCount: 1,
@@ -200,13 +199,12 @@ export class MembershipPaymentService {
             booking.status === "booked"
           ) {
             booking.status = "completed";
-            booking.totalAmount = plan.perSlotPrice;
+            booking.totalAmount = slot.price;
             await bookingRepo.save(booking);
 
             slot.membershipPlanId = plan.id;
             slot.status = "completed";
             slot.slotType = "membership";
-            slot.price = plan.perSlotPrice;
             await slotRepo.save(slot);
 
             matchedSlotIds.push(slot.id);

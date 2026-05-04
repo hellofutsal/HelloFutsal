@@ -1,0 +1,26 @@
+meta {
+  name: PayMembershipSlot
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{development}}/membership-plans/{{membershipId}}/record-payment
+  body: json
+  auth: bearer
+}
+
+headers {
+  Authorization: Bearer {JWT_TOKEN}
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "amount": 500
+  }
+}
