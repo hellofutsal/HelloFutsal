@@ -22,8 +22,6 @@ export interface MembershipDaySchedule {
   day: string; // "monday", "tuesday", etc.
   startTime: string[]; // HH:mm format
   endTime: string[]; // HH:mm format
-  startDate: string; // YYYY-MM-DD
-  monthlyPrice: string; // stored as numeric string (precision handled by plan.monthly_price)
 }
 
 @Entity({ name: "membership_plans" })
@@ -56,8 +54,7 @@ export class MembershipPlan {
   startDate!: string;
 
   /**
-   * Monthly price charged for this membership plan.
-   * The per-slot price is computed as: monthlyPrice / 30
+   * Per-slot price charged for this membership plan.
    */
   @Column({
     name: "monthly_price",
@@ -66,7 +63,7 @@ export class MembershipPlan {
     scale: 2,
     default: 0,
   })
-  monthlyPrice!: string;
+  perSlotPrice!: string;
 
   @Column({ name: "active", type: "boolean", default: true })
   active!: boolean;

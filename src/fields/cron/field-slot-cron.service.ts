@@ -157,6 +157,9 @@ export class FieldSlotCronService {
 
     for (const plan of plans) {
       if (!plan.field || !plan.user) continue;
+      if (!plan.startDate) continue;
+
+      const perSlotPrice = plan.perSlotPrice;
 
       this.logger.log(
         `Processing membership plan: User=${plan.user.name}, Field=${plan.field.fieldName}`,
@@ -177,8 +180,8 @@ export class FieldSlotCronService {
 
           if (daySchedule.day !== upcomingDayName) continue;
 
-          // Check if the upcoming date is on or after this day's membership start date
-          if (upcomingDate < daySchedule.startDate) continue;
+          // Check if the upcoming date is on or after the plan start date
+          if (upcomingDate < plan.startDate) continue;
 
           for (const timeWindow of timeWindows) {
             this.logger.log(
@@ -193,11 +196,6 @@ export class FieldSlotCronService {
 
               const otherSchedules = (otherPlan.daysOfWeek as any[]) || [];
               return otherSchedules.some((s) => {
-                // Skip schedules that start after the upcoming date
-                if (s.startDate && s.startDate > upcomingDate) {
-                  return false;
-                }
-
                 if (s.day !== upcomingDayName) {
                   return false;
                 }
@@ -289,13 +287,7 @@ export class FieldSlotCronService {
 
                   if (!slot) return false;
 
-                  // Calculate per-day price from monthlyPrice
-                  if (daySchedule.monthlyPrice) {
-                    const perSlot = (
-                      parseFloat(daySchedule.monthlyPrice as any) / 30
-                    ).toFixed(2);
-                    slot.price = perSlot;
-                  }
+                  slot.price = perSlotPrice;
 
                   // If slot is booked for non-membership, override it with membership booking
                   if (

@@ -7,7 +7,6 @@ import {
   Matches,
   IsArray,
   ArrayNotEmpty,
-  ArrayMinSize,
   IsIn,
   IsOptional,
   Validate,
@@ -31,10 +30,6 @@ export class MembershipTimeWindowDto {
     message: "endTime must be in HH:mm format",
   })
   endTime!: string;
-
-  @IsNumber()
-  @IsPositive()
-  monthlyPrice!: number;
 }
 
 /**
@@ -53,14 +48,8 @@ export class MembershipDayScheduleDto {
   ])
   day!: string;
 
-  @IsString()
-  @Validate(DateYYYYMMDDConstraint)
-  startDate!: string;
-
   @IsArray()
   @ArrayNotEmpty()
-  @ValidateNested({ each: true })
-  @Type(() => MembershipTimeWindowDto)
   slots!: MembershipTimeWindowDto[];
 }
 
@@ -74,12 +63,17 @@ export class CreateMembershipPlanDto {
   @IsUUID()
   fieldId!: string;
 
+  @IsNumber()
+  @IsPositive()
+  perSlotPrice!: number;
+
+  @IsString()
+  @Validate(DateYYYYMMDDConstraint)
+  startDate!: string;
+
   @IsArray()
   @ArrayNotEmpty()
-  @ArrayMinSize(1)
-  @ValidateNested({ each: true })
-  @Type(() => MembershipDayScheduleDto)
-  slots!: MembershipDayScheduleDto[]; // array of day schedules, each with nested time windows
+  timeRange!: MembershipDayScheduleDto[];
 
   @IsOptional()
   @IsBoolean()

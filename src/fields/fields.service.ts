@@ -473,8 +473,8 @@ export class FieldsService {
             day: d.day,
             startTime: timeWindow.startTime,
             endTime: timeWindow.endTime,
-            startDate: d.startDate,
-            monthlyPrice: d.monthlyPrice,
+            startDate: plan.startDate,
+            perSlotPrice: plan.perSlotPrice,
           })),
         );
 
@@ -529,7 +529,7 @@ export class FieldsService {
               startTime: schedule.startTime,
               endTime: schedule.endTime,
               startDate: schedule.startDate,
-              monthlyPrice: schedule.monthlyPrice,
+              perSlotPrice: schedule.perSlotPrice,
               slots: slots.map((s) => ({
                 id: s.id,
                 slotDate: s.slotDate,

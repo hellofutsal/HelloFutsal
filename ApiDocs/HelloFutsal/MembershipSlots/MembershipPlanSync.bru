@@ -13,25 +13,31 @@
         "userName": "Ayush Morning Slot 1",
         "phoneNumber": "9867654567",
         "fieldId": "<FIELD_ID>",
-        "daysOfWeek": [
+        "perSlotPrice": 1000,
+        "startDate": "2026-05-02",
+        "timeRange": [
           {
             "day": "saturday",
-            "startTime": "08:00",
-            "endTime": "09:00",
-            "startDate": "2026-05-02",
-            "monthlyPrice": 1000.00
+            "slots": [
+              {
+                "startTime": "08:00",
+                "endTime": "09:00"
+              }
+            ]
           },
           {
             "day": "sunday",
-            "startTime": "09:00",
-            "endTime": "10:00",
-            "startDate": "2026-05-02",
-            "monthlyPrice": 1000.00
+            "slots": [
+              {
+                "startTime": "09:00",
+                "endTime": "10:00"
+              }
+            ]
           }
         ],
         "active": true
       },
-      "description": "Creates a membership plan with flexible day/time scheduling and immediately syncs all matching available slots for the user. Each day in daysOfWeek can have independent start and end times. Replace <FIELD_ID> and <AUTH_TOKEN> with actual values."
+      "description": "Creates a membership plan with flexible day/time scheduling and immediately syncs all matching available slots for the user. Use perSlotPrice, startDate, and timeRange. Replace <FIELD_ID> and <AUTH_TOKEN> with actual values."
     }
   ]
 }

@@ -99,7 +99,7 @@ export class BookingService {
           //   • slot's day-of-week is in plan.daysOfWeek
           //   • slot's startTime & endTime match the plan's window exactly
           //
-          // If a match is found, override the slot price with  monthlyPrice / 30
+          // If a match is found, override the slot price with the plan's per-slot price
           // and mark both the slot and the booking as "membership" type.
           // ---------------------------------------------------------------------------
           let bookingType: "normal" | "membership" = "normal";
@@ -130,10 +130,7 @@ export class BookingService {
             );
 
           if (matchingPlan) {
-            const perSlotPrice = this.computeMembershipSlotPrice(
-              matchingPlan.monthlyPrice,
-            );
-            slot.price = perSlotPrice;
+            slot.price = matchingPlan.perSlotPrice;
             slot.slotType = "membership";
             bookingType = "membership";
           }

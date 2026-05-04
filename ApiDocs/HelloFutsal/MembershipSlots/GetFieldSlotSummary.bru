@@ -7,71 +7,13 @@ meta {
 get {
   url: {{development}}/fields/{{fieldId}}/slot-summary
   body: none
-  auth: none
+  auth: bearer
 }
 
 headers {
   Content-Type: application/json
 }
 
-response:body:json {
-  {
-    "field": {
-      "id": "ce4d235a-c2ef-4352-b506-a23742f6cad6",
-      "fieldName": "Kc Futsal 4A Side",
-      "venueName": "KC Futsal New"
-    },
-    "scheduleSettings": {
-      "slotDurationMin": 60,
-      "breakBetweenMin": 0,
-      "basePrice": "1400.00",
-      "openingTime": "06:00",
-      "closingTime": "14:00"
-    },
-    "membershipPlans": [
-      {
-        "id": "plan-uuid-1",
-        "userName": "Ayush Morning Slot 1",
-        "user": {
-          "id": "user-uuid",
-          "name": "Ayush Adhikari"
-        },
-        "daysOfWeek": [
-          {
-            "day": "saturday",
-            "startTime": "08:00",
-            "endTime": "09:00",
-            "startDate": "2026-05-02",
-            "monthlyPrice": "1000.00",
-            "slots": [
-              {
-                "id": "slot-uuid-1",
-                "slotDate": "2026-05-02",
-                "status": "booked"
-              },
-              {
-                "id": "slot-uuid-2",
-                "slotDate": "2026-05-09",
-                "status": "booked"
-              }
-            ]
-          },
-          {
-            "day": "sunday",
-            "startTime": "09:00",
-            "endTime": "10:00",
-            "startDate": "2026-05-02",
-            "monthlyPrice": "1000.00",
-            "slots": [
-              {
-                "id": "slot-uuid-3",
-                "slotDate": "2026-05-03",
-                "status": "booked"
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  }
+auth:bearer {
+  token: {{token}}
 }
