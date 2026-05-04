@@ -54,7 +54,24 @@ export class MembershipPaymentService {
         const bookingRepo = manager.getRepository(Booking);
         const slotRepo = manager.getRepository(FieldSlot);
 
-        const periodStartDate = dto.periodStartDate ?? plan.startDate;
+        let periodStartDate = dto.periodStartDate;
+
+        if (!periodStartDate) {
+          // Check if there's an existing payment for this plan
+          const latestPayment = await paymentRepo.findOne({
+            where: { membershipPlanId: plan.id },
+            order: { periodEndDate: "DESC" },
+          });
+
+          if (latestPayment) {
+            // Use the end date of the last payment as the start date for the new window
+            periodStartDate = latestPayment.periodEndDate;
+          } else {
+            // No previous payment, use the plan's start date
+            periodStartDate = plan.startDate;
+          }
+        }
+
         const periodStart = DateTime.fromISO(periodStartDate, {
           zone: "Asia/Kathmandu",
         });
