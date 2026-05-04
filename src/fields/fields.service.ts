@@ -492,13 +492,14 @@ export class FieldsService {
 
         const schedulesWithSlots = await Promise.all(
           dayTimeSchedules.map(async (schedule) => {
-            // Get all available slots for this field and time window
+            // Get all available slots for this field and time window, scoped to the plan
             const allSlots = await this.fieldSlotsRepository.find({
               where: {
                 fieldId,
                 startTime: schedule.startTime,
                 endTime: schedule.endTime,
                 slotType: "membership",
+                membershipPlanId: schedule.planId,
               },
               order: {
                 slotDate: "ASC",
@@ -526,6 +527,7 @@ export class FieldsService {
             });
 
             return {
+              planId: schedule.planId,
               day: schedule.day,
               startTime: schedule.startTime,
               endTime: schedule.endTime,
