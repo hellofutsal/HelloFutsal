@@ -6,6 +6,10 @@ export class CreateMembershipPaymentDto {
   membershipPlanId!: string;
 
   @IsOptional()
+  @IsUUID()
+  slotId?: string;
+
+  @IsOptional()
   @IsString()
   @Validate(DateYYYYMMDDConstraint)
   periodStartDate?: string;

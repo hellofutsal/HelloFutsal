@@ -10,7 +10,10 @@ import { DateTime } from "luxon";
 import { Repository } from "typeorm";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { Booking } from "./entities/booking.entity";
-import { MembershipPlan } from "./entities/membership-plan.entity";
+import {
+  MembershipPlan,
+  MembershipDaySchedule,
+} from "./entities/membership-plan.entity";
 import { MembershipPayment } from "./entities/membership-payment.entity";
 import { FieldSlot } from "../fields/entities/field-slot.entity";
 import { getMembershipTimeWindows } from "./membership-plan-schedule.utils";
@@ -23,8 +26,6 @@ export class MembershipPaymentService {
     private readonly membershipPaymentRepo: Repository<MembershipPayment>,
     @InjectRepository(MembershipPlan)
     private readonly membershipPlanRepo: Repository<MembershipPlan>,
-    @InjectRepository(FieldSlot)
-    private readonly fieldSlotRepo: Repository<FieldSlot>,
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
   ) {}
@@ -47,35 +48,24 @@ export class MembershipPaymentService {
       throw new ForbiddenException("Not authorized to confirm this payment");
     }
 
-    const periodStartDate = dto.periodStartDate ?? plan.startDate;
-    const periodStart = DateTime.fromISO(periodStartDate, {
-      zone: "Asia/Kathmandu",
-    });
-    if (!periodStart.isValid) {
-      throw new BadRequestException("periodStartDate must be a valid date");
-    }
-
-    const periodEndDate = periodStart
-      .plus({ months: 1 })
-      .minus({ days: 1 })
-      .toISODate();
-    if (!periodEndDate) {
-      throw new BadRequestException("Unable to calculate one-month period");
-    }
-
     return await this.membershipPaymentRepo.manager.transaction(
       async (manager) => {
         const paymentRepo = manager.getRepository(MembershipPayment);
         const bookingRepo = manager.getRepository(Booking);
         const slotRepo = manager.getRepository(FieldSlot);
 
-        // load candidate slots in period for the field
-        const periodSlots = await slotRepo
-          .createQueryBuilder("slot")
-          .where("slot.field_id = :fieldId", { fieldId: plan.field.id })
-          .andWhere("slot.slot_date >= :periodStartDate", { periodStartDate })
-          .andWhere("slot.slot_date <= :periodEndDate", { periodEndDate })
-          .getMany();
+        const periodStartDate = dto.periodStartDate ?? plan.startDate;
+        const periodStart = DateTime.fromISO(periodStartDate, {
+          zone: "Asia/Kathmandu",
+        });
+        if (!periodStart.isValid) {
+          throw new BadRequestException("periodStartDate must be a valid date");
+        }
+
+        const periodEndDate = periodStart.plus({ months: 1 }).toISODate();
+        if (!periodEndDate) {
+          throw new BadRequestException("Unable to calculate one-month period");
+        }
 
         const dayNames = [
           "sunday",
@@ -87,40 +77,118 @@ export class MembershipPaymentService {
           "saturday",
         ];
 
-        const planSchedules = (plan.daysOfWeek || []) as any[];
+        if (dto.slotId) {
+          const slot = await slotRepo.findOne({
+            where: {
+              id: dto.slotId,
+              fieldId: plan.field.id,
+            },
+          });
+
+          if (!slot) {
+            throw new NotFoundException("Membership slot not found");
+          }
+
+          const booking = await bookingRepo.findOne({
+            where: {
+              slotId: slot.id,
+              userId: plan.user.id,
+            },
+          });
+
+          if (!booking || booking.bookingType !== "membership") {
+            throw new BadRequestException(
+              "No membership booking found for the provided slot",
+            );
+          }
+
+          const lockedSlot = await slotRepo
+            .createQueryBuilder("slot")
+            .where("slot.id = :slotId", { slotId: slot.id })
+            .setLock("pessimistic_write")
+            .getOne();
+
+          const lockedBooking = await bookingRepo
+            .createQueryBuilder("booking")
+            .where("booking.slot_id = :slotId", { slotId: slot.id })
+            .andWhere("booking.user_id = :userId", { userId: plan.user.id })
+            .setLock("pessimistic_write")
+            .getOne();
+
+          if (!lockedSlot || !lockedBooking) {
+            throw new NotFoundException("Membership slot not found");
+          }
+
+          if (lockedBooking.status === "completed") {
+            throw new ConflictException("Membership slot is already paid");
+          }
+
+          lockedBooking.status = "completed";
+          lockedBooking.bookingType = "membership";
+          lockedBooking.totalAmount = plan.perSlotPrice;
+
+          lockedSlot.status = "completed";
+          lockedSlot.slotType = "membership";
+          lockedSlot.price = plan.perSlotPrice;
+          lockedSlot.membershipPlanId = plan.id;
+
+          await bookingRepo.save(lockedBooking);
+          await slotRepo.save(lockedSlot);
+
+          const payment = paymentRepo.create({
+            membershipPlanId: plan.id,
+            fieldId: plan.field.id,
+            userId: plan.user.id,
+            slotId: lockedSlot.id,
+            periodStartDate: lockedSlot.slotDate,
+            periodEndDate: lockedSlot.slotDate,
+            paymentStatus: "paid",
+            totalAmount: Number(plan.perSlotPrice).toFixed(2),
+            confirmedSlotIds: [lockedSlot.id],
+            confirmedBookingIds: [lockedBooking.id],
+            confirmedCount: 1,
+            paidAt: new Date(),
+          });
+
+          const saved = await paymentRepo.save(payment);
+
+          return {
+            success: true,
+            payment: saved,
+            confirmedCount: 1,
+          };
+        }
+
+        const periodSlots = await slotRepo
+          .createQueryBuilder("slot")
+          .where("slot.field_id = :fieldId", { fieldId: plan.field.id })
+          .andWhere("slot.slot_date >= :periodStartDate", { periodStartDate })
+          .andWhere("slot.slot_date < :periodEndDate", { periodEndDate })
+          .getMany();
+
+        const planSchedules = (plan.daysOfWeek ||
+          []) as MembershipDaySchedule[];
         const matchedSlotIds: string[] = [];
         const matchedBookingIds: string[] = [];
 
         for (const slot of periodSlots) {
-          const slotDayName = this.getDayName(slot.slotDate, dayNames);
-          const matchingSchedules = planSchedules.filter(
-            (s) => s.day === slotDayName,
-          );
-          if (matchingSchedules.length === 0) continue;
-
-          const match = matchingSchedules.find((schedule) =>
-            getMembershipTimeWindows(schedule).some(
-              (w) =>
-                w.startTime === slot.startTime && w.endTime === slot.endTime,
-            ),
-          );
-          if (!match) continue;
-
-          // find booking for this slot for the member
           const booking = await bookingRepo.findOne({
             where: { slotId: slot.id, userId: plan.user.id },
           });
           if (!booking) continue;
 
-          // only update membership bookings that are still 'booked'
           if (
             booking.bookingType === "membership" &&
             booking.status === "booked"
           ) {
             booking.status = "completed";
+            booking.totalAmount = plan.perSlotPrice;
             await bookingRepo.save(booking);
 
             slot.membershipPlanId = plan.id;
+            slot.status = "completed";
+            slot.slotType = "membership";
+            slot.price = plan.perSlotPrice;
             await slotRepo.save(slot);
 
             matchedSlotIds.push(slot.id);
@@ -130,7 +198,7 @@ export class MembershipPaymentService {
 
         if (matchedSlotIds.length === 0) {
           throw new BadRequestException(
-            "No membership bookings found to confirm in the selected period",
+            "No membership bookings found in the monthly window for the selected plan",
           );
         }
 

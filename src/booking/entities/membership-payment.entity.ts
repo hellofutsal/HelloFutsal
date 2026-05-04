@@ -9,6 +9,7 @@ import {
 } from "typeorm";
 import { UserAccount } from "../../auth/entities/user.entity";
 import { Field } from "../../fields/entities/field.entity";
+import { FieldSlot } from "../../fields/entities/field-slot.entity";
 import { MembershipPlan } from "./membership-plan.entity";
 
 export type MembershipPaymentStatus =
@@ -35,6 +36,13 @@ export class MembershipPayment {
   @ManyToOne(() => Field, { onDelete: "CASCADE" })
   @JoinColumn({ name: "field_id" })
   field!: Field;
+
+  @Column({ name: "slot_id", type: "uuid", nullable: true })
+  slotId!: string | null;
+
+  @ManyToOne(() => FieldSlot, { onDelete: "SET NULL", nullable: true })
+  @JoinColumn({ name: "slot_id" })
+  slot!: FieldSlot | null;
 
   @Column({ name: "user_id", type: "uuid" })
   userId!: string;
