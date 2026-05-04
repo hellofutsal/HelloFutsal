@@ -563,57 +563,79 @@ export class MembershipPlanController {
     @Body() payload: { amount: number },
     @CurrentAccount() account: AuthenticatedAccount,
   ) {
-    const plan = await this.membershipPlanRepo.findOne({
-      where: { id: planId },
-      relations: ["user", "field"],
-    });
-
-    if (!plan) {
-      throw new NotFoundException("Membership plan not found");
-    }
-
-    // Authorize: field owner or membership holder can record payment
-    const isFieldOwner = account.id === plan.field.ownerId;
-    const isMembershipHolder = account.id === plan.user.id;
-
-    if (!isFieldOwner && !isMembershipHolder) {
-      throw new ForbiddenException(
-        "Only field owner or membership holder can record payment",
+    // Validate amount as numeric
+    const amount = Number(payload?.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException(
+        "Payment amount must be a finite number > 0",
       );
     }
 
-    if (!payload.amount || payload.amount <= 0) {
-      throw new BadRequestException("Payment amount must be greater than 0");
-    }
+    // Run transactional update with pessimistic lock to avoid races
+    return await this.membershipPlanRepo.manager.transaction(
+      async (manager) => {
+        const planRepo = manager.getRepository(MembershipPlan);
 
-    // Calculate new amounts
-    const currentTotal = Number(plan.totalAmount || 0);
-    const paidSoFar = Number(plan.paidAmount || 0);
-    const newPaidAmount = paidSoFar + payload.amount;
+        // Reload plan with lock and relations
+        const lockedPlan = await planRepo
+          .createQueryBuilder("plan")
+          .setLock("pessimistic_write")
+          .leftJoinAndSelect("plan.field", "field")
+          .leftJoinAndSelect("plan.user", "user")
+          .where("plan.id = :id", { id: planId })
+          .getOne();
 
-    // Update plan
-    plan.paidAmount = newPaidAmount.toFixed(2);
+        if (!lockedPlan) {
+          throw new NotFoundException("Membership plan not found");
+        }
 
-    // Calculate due and extra paid
-    const dueAmount = Math.max(0, currentTotal - newPaidAmount);
-    const extraPaidAmount = Math.max(0, newPaidAmount - currentTotal);
+        // Authorize: field owner or membership holder can record payment
+        const isFieldOwner = account.id === lockedPlan.field.ownerId;
+        const isMembershipHolder = account.id === lockedPlan.user.id;
+        if (!isFieldOwner && !isMembershipHolder) {
+          throw new ForbiddenException(
+            "Only field owner or membership holder can record payment",
+          );
+        }
 
-    plan.dueAmount = dueAmount.toFixed(2);
-    plan.extraPaidAmount = extraPaidAmount.toFixed(2);
+        // Atomically increment paid_amount in DB
+        await manager
+          .createQueryBuilder()
+          .update(MembershipPlan)
+          .set({ paidAmount: () => `paid_amount + ${amount}` })
+          .where("id = :id", { id: planId })
+          .execute();
 
-    const updated = await this.membershipPlanRepo.save(plan);
+        // Reload updated plan
+        const updatedPlan = await planRepo.findOne({ where: { id: planId } });
+        if (!updatedPlan) {
+          throw new NotFoundException("Membership plan not found after update");
+        }
 
-    return {
-      success: true,
-      plan: {
-        id: updated.id,
-        userName: updated.userName,
-        totalAmount: updated.totalAmount,
-        paidAmount: updated.paidAmount,
-        dueAmount: updated.dueAmount,
-        extraPaidAmount: updated.extraPaidAmount,
+        // Compute numeric breakdown
+        const currentTotal = Number(updatedPlan.totalAmount || 0);
+        const paidNum = Number(updatedPlan.paidAmount || 0);
+        const dueAmount = Math.max(0, currentTotal - paidNum);
+        const extraPaidAmount = Math.max(0, paidNum - currentTotal);
+
+        updatedPlan.dueAmount = dueAmount.toFixed(2);
+        updatedPlan.extraPaidAmount = extraPaidAmount.toFixed(2);
+
+        await planRepo.save(updatedPlan);
+
+        return {
+          success: true,
+          plan: {
+            id: updatedPlan.id,
+            userName: updatedPlan.userName,
+            totalAmount: updatedPlan.totalAmount,
+            paidAmount: updatedPlan.paidAmount,
+            dueAmount: updatedPlan.dueAmount,
+            extraPaidAmount: updatedPlan.extraPaidAmount,
+          },
+          message: `Payment of ${amount} recorded. Remaining due: ${updatedPlan.dueAmount}`,
+        };
       },
-      message: `Payment of ${payload.amount} recorded. Remaining due: ${updated.dueAmount}`,
-    };
+    );
   }
 }
