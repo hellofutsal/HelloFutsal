@@ -68,6 +68,42 @@ export class MembershipPlan {
   @Column({ name: "active", type: "boolean", default: true })
   active!: boolean;
 
+  @Column({
+    name: "total_amount",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  totalAmount!: string;
+
+  @Column({
+    name: "paid_amount",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  paidAmount!: string;
+
+  @Column({
+    name: "due_amount",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  dueAmount!: string;
+
+  @Column({
+    name: "extra_paid_amount",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  extraPaidAmount!: string;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 

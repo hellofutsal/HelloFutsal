@@ -3,6 +3,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Param,
   ConflictException,
   NotFoundException,
@@ -25,6 +26,7 @@ import {
 import { UserAccount } from "../auth/entities/user.entity";
 import { Field } from "../fields/entities/field.entity";
 import { FieldSlot } from "../fields/entities/field-slot.entity";
+import { FieldsService } from "../fields/fields.service";
 import { Booking } from "./entities/booking.entity";
 import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -44,6 +46,7 @@ export class MembershipPlanController {
     private readonly fieldSlotRepo: Repository<FieldSlot>,
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
+    private readonly fieldsService: FieldsService,
   ) {}
 
   /**
@@ -445,39 +448,194 @@ export class MembershipPlanController {
       throw new ForbiddenException("Not authorized to view this membership");
     }
 
-    const now = DateTime.now().setZone("Asia/Kathmandu");
-    const today = now.toISODate();
-    const nowTime = now.toFormat("HH:mm:ss");
+    return await this.membershipPlanRepo.manager.transaction(
+      async (manager) => {
+        const now = DateTime.now().setZone("Asia/Kathmandu");
+        const today = now.toISODate();
+        const nowTime = now.toFormat("HH:mm:ss");
 
-    const bookings = await this.bookingRepo
-      .createQueryBuilder("booking")
-      .innerJoinAndSelect("booking.slot", "slot")
-      .where("booking.user_id = :userId", { userId: plan.user.id })
-      .andWhere("booking.booking_type = :type", { type: "membership" })
-      .andWhere("slot.membership_plan_id = :planId", { planId: plan.id })
-      .andWhere(
-        new Brackets((qb) => {
-          qb.where("slot.slot_date < :today", { today }).orWhere(
-            "slot.slot_date = :today AND slot.start_time < :nowTime",
-            { today, nowTime },
+        // Fetch played slots
+        const bookings = await manager
+          .getRepository(Booking)
+          .createQueryBuilder("booking")
+          .innerJoinAndSelect("booking.slot", "slot")
+          .where("booking.user_id = :userId", { userId: plan.user.id })
+          .andWhere("booking.booking_type = :type", { type: "membership" })
+          .andWhere("slot.membership_plan_id = :planId", { planId: plan.id })
+          .andWhere(
+            new Brackets((qb) => {
+              qb.where("slot.slot_date < :today", { today }).orWhere(
+                "slot.slot_date = :today AND slot.start_time < :nowTime",
+                { today, nowTime },
+              );
+            }),
+          )
+          .orderBy("slot.slot_date", "DESC")
+          .addOrderBy("slot.start_time", "DESC")
+          .getMany();
+
+        // Calculate total amount from played slots (using slot's current price)
+        const totalAmount = bookings.reduce((sum, booking) => {
+          return (
+            sum +
+            Number(
+              booking.slot.price ||
+                booking.totalAmount ||
+                booking.baseAmount ||
+                0,
+            )
           );
-        }),
-      )
-      .orderBy("slot.slot_date", "DESC")
-      .addOrderBy("slot.start_time", "DESC")
-      .getMany();
+        }, 0);
 
-    // Map to response format
-    return bookings.map((b) => ({
-      bookingId: b.id,
-      slotId: b.slotId,
-      slotDate: b.slot.slotDate,
-      startTime: b.slot.startTime,
-      endTime: b.slot.endTime,
-      bookingStatus: b.status,
-      bookingType: b.bookingType,
-      baseAmount: b.baseAmount,
-      totalAmount: b.totalAmount,
-    }));
+        // Update membership plan with total amount
+        const updatedPlan = await manager
+          .getRepository(MembershipPlan)
+          .findOne({
+            where: { id: planId },
+          });
+
+        if (updatedPlan) {
+          updatedPlan.totalAmount = totalAmount.toFixed(2);
+
+          // Calculate and save payment breakdown
+          const paidAmountNum = Number(updatedPlan.paidAmount || 0);
+          const dueAmount = Math.max(0, totalAmount - paidAmountNum);
+          const extraPaidAmount = Math.max(0, paidAmountNum - totalAmount);
+
+          updatedPlan.dueAmount = dueAmount.toFixed(2);
+          updatedPlan.extraPaidAmount = extraPaidAmount.toFixed(2);
+
+          await manager.save(updatedPlan);
+        }
+
+        // Map to response format (use slot's current price for totalAmount)
+        const playedSlots = bookings.map((b) => ({
+          bookingId: b.id,
+          slotId: b.slotId,
+          slotDate: b.slot.slotDate,
+          startTime: b.slot.startTime,
+          endTime: b.slot.endTime,
+          bookingStatus: b.status,
+          bookingType: b.bookingType,
+          baseAmount: b.baseAmount,
+          totalAmount: b.slot.price,
+        }));
+
+        return {
+          plan: {
+            id: updatedPlan?.id,
+            userName: updatedPlan?.userName,
+            totalAmount: updatedPlan?.totalAmount,
+            paidAmount: updatedPlan?.paidAmount,
+            dueAmount: updatedPlan?.dueAmount,
+            extraPaidAmount: updatedPlan?.extraPaidAmount,
+          },
+          playedSlots,
+          summary: {
+            totalSlots: bookings.length,
+            totalAmount: updatedPlan?.totalAmount,
+            paidAmount: updatedPlan?.paidAmount,
+            dueAmount: updatedPlan?.dueAmount,
+            extraPaidAmount: updatedPlan?.extraPaidAmount,
+          },
+        };
+      },
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("by-field/:fieldId")
+  getMembershipDetailsByField(
+    @Param("fieldId") fieldId: string,
+    @CurrentAccount() account: AuthenticatedAccount,
+  ) {
+    return this.fieldsService.getFieldSlotSummary(fieldId, account.id);
+  }
+
+  /**
+   * Record payment for a membership plan
+   * Reduces totalDueAmount by the paid amount
+   */
+  @Patch(":id/record-payment")
+  @UseGuards(JwtAuthGuard)
+  async recordPayment(
+    @Param("id") planId: string,
+    @Body() payload: { amount: number },
+    @CurrentAccount() account: AuthenticatedAccount,
+  ) {
+    // Validate amount as numeric
+    const amount = Number(payload?.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException(
+        "Payment amount must be a finite number > 0",
+      );
+    }
+
+    // Run transactional update with pessimistic lock to avoid races
+    return await this.membershipPlanRepo.manager.transaction(
+      async (manager) => {
+        const planRepo = manager.getRepository(MembershipPlan);
+
+        // Reload plan with lock and relations
+        const lockedPlan = await planRepo
+          .createQueryBuilder("plan")
+          .setLock("pessimistic_write")
+          .leftJoinAndSelect("plan.field", "field")
+          .leftJoinAndSelect("plan.user", "user")
+          .where("plan.id = :id", { id: planId })
+          .getOne();
+
+        if (!lockedPlan) {
+          throw new NotFoundException("Membership plan not found");
+        }
+
+        // Authorize: field owner or membership holder can record payment
+        const isFieldOwner = account.id === lockedPlan.field.ownerId;
+        const isMembershipHolder = account.id === lockedPlan.user.id;
+        if (!isFieldOwner && !isMembershipHolder) {
+          throw new ForbiddenException(
+            "Only field owner or membership holder can record payment",
+          );
+        }
+
+        // Atomically increment paid_amount in DB
+        await manager
+          .createQueryBuilder()
+          .update(MembershipPlan)
+          .set({ paidAmount: () => `paid_amount + ${amount}` })
+          .where("id = :id", { id: planId })
+          .execute();
+
+        // Reload updated plan
+        const updatedPlan = await planRepo.findOne({ where: { id: planId } });
+        if (!updatedPlan) {
+          throw new NotFoundException("Membership plan not found after update");
+        }
+
+        // Compute numeric breakdown
+        const currentTotal = Number(updatedPlan.totalAmount || 0);
+        const paidNum = Number(updatedPlan.paidAmount || 0);
+        const dueAmount = Math.max(0, currentTotal - paidNum);
+        const extraPaidAmount = Math.max(0, paidNum - currentTotal);
+
+        updatedPlan.dueAmount = dueAmount.toFixed(2);
+        updatedPlan.extraPaidAmount = extraPaidAmount.toFixed(2);
+
+        await planRepo.save(updatedPlan);
+
+        return {
+          success: true,
+          plan: {
+            id: updatedPlan.id,
+            userName: updatedPlan.userName,
+            totalAmount: updatedPlan.totalAmount,
+            paidAmount: updatedPlan.paidAmount,
+            dueAmount: updatedPlan.dueAmount,
+            extraPaidAmount: updatedPlan.extraPaidAmount,
+          },
+          message: `Payment of ${amount} recorded. Remaining due: ${updatedPlan.dueAmount}`,
+        };
+      },
+    );
   }
 }

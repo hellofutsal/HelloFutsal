@@ -1,16 +1,17 @@
 meta {
-  name: ConfirmBooking
+  name: PayMembershipSlot
   type: http
-  seq: 14
+  seq: 5
 }
 
 patch {
-  url: {{development}}/bookings/{{slotId}}/confirm
+  url: {{development}}/membership-plans/{{membershipId}}/record-payment
   body: json
   auth: bearer
 }
 
 headers {
+  Authorization: Bearer {JWT_TOKEN}
   Content-Type: application/json
 }
 
@@ -20,6 +21,6 @@ auth:bearer {
 
 body:json {
   {
-    "totalAmount": 2000
+    "amount": 500
   }
 }

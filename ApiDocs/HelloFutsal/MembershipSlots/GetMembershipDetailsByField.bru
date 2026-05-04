@@ -1,0 +1,19 @@
+meta {
+  name: GetMembershipDetailsByField
+  type: http
+  seq: 22
+}
+
+get {
+  url: {{development}}/membership-plans/by-field/{{fieldId}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}

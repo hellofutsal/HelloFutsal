@@ -5,12 +5,16 @@ meta {
 }
 
 get {
-  url: http://localhost:3000/membership-plans/%3CPLAN_ID%3E/played-slots
+  url: {{development}}/membership-plans/{{membershipId}}/played-slots
   body: none
-  auth: none
+  auth: bearer
 }
 
 headers {
   Authorization: Bearer <JWT>
   Accept: application/json
+}
+
+auth:bearer {
+  token: {{token}}
 }
