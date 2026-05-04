@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Post,
+  Get,
+  Param,
   ConflictException,
   NotFoundException,
   ForbiddenException,
@@ -9,7 +11,8 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Repository, Brackets } from "typeorm";
+import { DateTime } from "luxon";
 import {
   MembershipPlan,
   MembershipDaySchedule,
@@ -64,7 +67,6 @@ export class MembershipPlanController {
 
     return hours * 60 + minutes;
   }
-
   /**
    * Validates time window: endTime must be greater than startTime
    */
@@ -421,5 +423,61 @@ export class MembershipPlanController {
         };
       },
     );
+  }
+
+  @Get(":id/played-slots")
+  @UseGuards(JwtAuthGuard)
+  async getPlayedSlots(
+    @Param("id") planId: string,
+    @CurrentAccount() account: AuthenticatedAccount,
+  ) {
+    const plan = await this.membershipPlanRepo.findOne({
+      where: { id: planId },
+      relations: ["field", "user"],
+    });
+
+    if (!plan || !plan.field || !plan.user) {
+      throw new NotFoundException("Membership plan not found");
+    }
+
+    // allow plan owner or the member themselves to view played slots
+    if (account.id !== plan.field.ownerId && account.id !== plan.user.id) {
+      throw new ForbiddenException("Not authorized to view this membership");
+    }
+
+    const now = DateTime.now().setZone("Asia/Kathmandu");
+    const today = now.toISODate();
+    const nowTime = now.toFormat("HH:mm:ss");
+
+    const bookings = await this.bookingRepo
+      .createQueryBuilder("booking")
+      .innerJoinAndSelect("booking.slot", "slot")
+      .where("booking.user_id = :userId", { userId: plan.user.id })
+      .andWhere("booking.booking_type = :type", { type: "membership" })
+      .andWhere("slot.membership_plan_id = :planId", { planId: plan.id })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where("slot.slot_date < :today", { today }).orWhere(
+            "slot.slot_date = :today AND slot.start_time < :nowTime",
+            { today, nowTime },
+          );
+        }),
+      )
+      .orderBy("slot.slot_date", "DESC")
+      .addOrderBy("slot.start_time", "DESC")
+      .getMany();
+
+    // Map to response format
+    return bookings.map((b) => ({
+      bookingId: b.id,
+      slotId: b.slotId,
+      slotDate: b.slot.slotDate,
+      startTime: b.slot.startTime,
+      endTime: b.slot.endTime,
+      bookingStatus: b.status,
+      bookingType: b.bookingType,
+      baseAmount: b.baseAmount,
+      totalAmount: b.totalAmount,
+    }));
   }
 }
