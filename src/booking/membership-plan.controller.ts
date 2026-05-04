@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Post,
+  Get,
+  Param,
   ConflictException,
   NotFoundException,
   ForbiddenException,
@@ -9,7 +11,8 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Repository, Brackets } from "typeorm";
+import { DateTime } from "luxon";
 import {
   MembershipPlan,
   MembershipDaySchedule,
@@ -17,6 +20,7 @@ import {
 import {
   CreateMembershipPlanDto,
   MembershipDayScheduleDto,
+  MembershipTimeWindowDto,
 } from "./dto/create-membership-plan.dto";
 import { UserAccount } from "../auth/entities/user.entity";
 import { Field } from "../fields/entities/field.entity";
@@ -25,6 +29,7 @@ import { Booking } from "./entities/booking.entity";
 import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
+import { getMembershipTimeWindows } from "./membership-plan-schedule.utils";
 
 @Controller("membership-plans")
 export class MembershipPlanController {
@@ -40,15 +45,6 @@ export class MembershipPlanController {
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
   ) {}
-
-  /**
-   * Computes the per-slot membership price from a monthly price.
-   * Formula: monthlyPrice / 30  (1 month = 30 days, 1 day = 1 slot time-block)
-   */
-  private computeSlotPrice(monthlyPrice: number): string {
-    const perSlot = monthlyPrice / 30;
-    return perSlot.toFixed(2);
-  }
 
   /**
    * Parses time string to minutes for comparison
@@ -71,7 +67,6 @@ export class MembershipPlanController {
 
     return hours * 60 + minutes;
   }
-
   /**
    * Validates time window: endTime must be greater than startTime
    */
@@ -84,6 +79,73 @@ export class MembershipPlanController {
         `Invalid time window: end time (${endTime}) must be greater than start time (${startTime})`,
       );
     }
+  }
+
+  private validateMembershipScheduleShape(
+    membershipSchedules: MembershipDayScheduleDto[],
+  ): void {
+    const validDays = new Set([
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+    ]);
+
+    for (const [dayIndex, daySchedule] of membershipSchedules.entries()) {
+      if (!daySchedule || typeof daySchedule !== "object") {
+        throw new BadRequestException(
+          `timeRange.${dayIndex} must be an object with day and slots`,
+        );
+      }
+
+      if (!daySchedule.day || !validDays.has(daySchedule.day)) {
+        throw new BadRequestException(
+          `timeRange.${dayIndex}.day must be one of sunday, monday, tuesday, wednesday, thursday, friday, saturday`,
+        );
+      }
+
+      if (!Array.isArray(daySchedule.slots) || daySchedule.slots.length === 0) {
+        throw new BadRequestException(
+          `timeRange.${dayIndex}.slots must be a non-empty array`,
+        );
+      }
+
+      for (const [slotIndex, timeWindow] of daySchedule.slots.entries()) {
+        if (!timeWindow || typeof timeWindow !== "object") {
+          throw new BadRequestException(
+            `timeRange.${dayIndex}.slots.${slotIndex} must be an object with startTime and endTime`,
+          );
+        }
+
+        if (typeof timeWindow.startTime !== "string") {
+          throw new BadRequestException(
+            `timeRange.${dayIndex}.slots.${slotIndex}.startTime must be a string`,
+          );
+        }
+
+        if (typeof timeWindow.endTime !== "string") {
+          throw new BadRequestException(
+            `timeRange.${dayIndex}.slots.${slotIndex}.endTime must be a string`,
+          );
+        }
+      }
+    }
+  }
+
+  private transformTimeRangeToStorageFormat(
+    daySchedules: MembershipDayScheduleDto[],
+  ): MembershipDaySchedule[] {
+    // Store day schedules as plain day/time windows; plan-level fields carry price/date.
+    return daySchedules.map((day) => {
+      return {
+        day: day.day,
+        startTime: day.slots.map((s) => s.startTime),
+        endTime: day.slots.map((s) => s.endTime),
+      };
+    });
   }
 
   /**
@@ -104,6 +166,9 @@ export class MembershipPlanController {
     @Body() dto: CreateMembershipPlanDto,
     @CurrentAccount() currentUser: AuthenticatedAccount,
   ) {
+    const membershipSchedules = dto.timeRange;
+    this.validateMembershipScheduleShape(membershipSchedules);
+
     // Verify field ownership before proceeding
     const field = await this.fieldRepo.findOne({
       where: { id: dto.fieldId, ownerId: currentUser.id },
@@ -115,10 +180,31 @@ export class MembershipPlanController {
       );
     }
 
-    // Validate all day/time windows
-    for (const daySchedule of dto.daysOfWeek) {
-      this.validateTimeWindow(daySchedule.startTime, daySchedule.endTime);
-      // validate startDate and monthlyPrice presence will be enforced by DTO
+    // Validate all day/time windows and check for intra-request overlaps
+    for (const daySchedule of membershipSchedules) {
+      // Validate each time window in the day
+      for (const timeWindow of daySchedule.slots) {
+        this.validateTimeWindow(timeWindow.startTime, timeWindow.endTime);
+      }
+
+      // Check for overlaps between slots within the same day
+      const slots = daySchedule.slots || [];
+      for (let i = 0; i < slots.length; i++) {
+        for (let j = i + 1; j < slots.length; j++) {
+          const slot1 = slots[i];
+          const slot2 = slots[j];
+          if (
+            !(
+              slot1.endTime <= slot2.startTime ||
+              slot2.endTime <= slot1.startTime
+            )
+          ) {
+            throw new BadRequestException(
+              `Overlapping time windows in ${daySchedule.day}: ${slot1.startTime}-${slot1.endTime} overlaps with ${slot2.startTime}-${slot2.endTime}`,
+            );
+          }
+        }
+      }
     }
 
     // Find or create user by phone number
@@ -156,7 +242,7 @@ export class MembershipPlanController {
             existingPlan.daysOfWeek as MembershipDaySchedule[];
 
           // Check each new day schedule against existing schedules
-          for (const newDaySchedule of dto.daysOfWeek) {
+          for (const newDaySchedule of membershipSchedules) {
             // Find all existing schedules for this day
             const existingForThisDay = existingDays.filter(
               (sch) => sch.day === newDaySchedule.day,
@@ -164,69 +250,60 @@ export class MembershipPlanController {
 
             if (existingForThisDay.length === 0) continue;
 
-            // new schedule time window
-            const newStart = this.parseTimeToMinutes(newDaySchedule.startTime);
-            const newEnd = this.parseTimeToMinutes(newDaySchedule.endTime);
+            const newWindows = newDaySchedule.slots;
 
             for (const existingDaySchedule of existingForThisDay) {
-              const existingStart = this.parseTimeToMinutes(
-                existingDaySchedule.startTime,
-              );
-              const existingEnd = this.parseTimeToMinutes(
-                existingDaySchedule.endTime,
-              );
+              const existingWindows =
+                getMembershipTimeWindows(existingDaySchedule);
 
-              if (
-                this.timeRangesOverlap(
-                  newStart,
-                  newEnd,
-                  existingStart,
-                  existingEnd,
-                )
-              ) {
-                throw new ConflictException(
-                  `Membership plan conflicts with existing plan on ${newDaySchedule.day} at ${existingDaySchedule.startTime}-${existingDaySchedule.endTime}. Please choose a different time range.`,
-                );
+              for (const newWindow of newWindows) {
+                const newStart = this.parseTimeToMinutes(newWindow.startTime);
+                const newEnd = this.parseTimeToMinutes(newWindow.endTime);
+
+                for (const existingWindow of existingWindows) {
+                  const existingStart = this.parseTimeToMinutes(
+                    existingWindow.startTime,
+                  );
+                  const existingEnd = this.parseTimeToMinutes(
+                    existingWindow.endTime,
+                  );
+
+                  if (
+                    this.timeRangesOverlap(
+                      newStart,
+                      newEnd,
+                      existingStart,
+                      existingEnd,
+                    )
+                  ) {
+                    throw new ConflictException(
+                      `Membership plan conflicts with existing plan on ${newDaySchedule.day} at ${existingWindow.startTime}-${existingWindow.endTime}. Please choose a different time range.`,
+                    );
+                  }
+                }
               }
             }
           }
         }
 
-        // Create membership plan with flexible day schedules
-        // Transform per-day monthlyPrice to string and compute aggregate values
-        const daysWithStrings = dto.daysOfWeek.map((d) => ({
-          day: d.day,
-          startTime: d.startTime,
-          endTime: d.endTime,
-          startDate: d.startDate,
-          monthlyPrice: d.monthlyPrice.toFixed(2),
-        }));
-
-        // Set plan-level startDate to earliest startDate among days
-        const earliestStart = daysWithStrings.reduce(
-          (acc, cur) => (cur.startDate < acc ? cur.startDate : acc),
-          daysWithStrings[0].startDate,
-        );
-        // Aggregate monthlyPrice as sum of per-day monthly prices
-        const aggregatedMonthly = daysWithStrings.reduce(
-          (sum, cur) => sum + parseFloat(cur.monthlyPrice),
-          0,
-        );
+        // Transform new nested format into storage format.
+        const daysWithStrings =
+          this.transformTimeRangeToStorageFormat(membershipSchedules);
 
         const plan = manager.create(MembershipPlan, {
           user,
           field,
           daysOfWeek: daysWithStrings as unknown as MembershipDaySchedule[],
-          startDate: earliestStart,
+          startDate: dto.startDate,
           active: dto.active ?? true,
           userName: dto.userName,
           phoneNumber: dto.phoneNumber,
-          monthlyPrice: aggregatedMonthly.toFixed(2),
+          perSlotPrice: dto.perSlotPrice.toFixed(2),
         });
-        await manager.save(plan);
+        const savedPlan = await manager.save(plan);
 
         let syncedCount = 0;
-        if (plan.active) {
+        if (savedPlan.active) {
           // Sync with existing slots: find all future available slots for this field
           const allSlots = await manager
             .getRepository(FieldSlot)
@@ -234,7 +311,7 @@ export class MembershipPlanController {
             .where("slot.field_id = :fieldId", { fieldId: field.id })
             .andWhere("slot.status = :status", { status: "available" })
             .andWhere("slot.slot_date >= :startDate", {
-              startDate: earliestStart,
+              startDate: dto.startDate,
             })
             .getMany();
 
@@ -262,7 +339,7 @@ export class MembershipPlanController {
             const slotDayName = dayNames[slotDateObj.getDay()];
 
             // Find ALL matching day schedules for this slot (same day can have multiple time windows)
-            const matchingDaySchedules = dto.daysOfWeek.filter(
+            const matchingDaySchedules = membershipSchedules.filter(
               (sch) => sch.day === slotDayName,
             );
 
@@ -277,21 +354,29 @@ export class MembershipPlanController {
 
             // Find a matching schedule for this slot's time window
             let matchingDaySchedule: MembershipDayScheduleDto | null = null;
+            let matchingTimeWindow: MembershipTimeWindowDto | null = null;
             for (const schedule of matchingDaySchedules) {
-              const scheduleStart = this.parseTimeToMinutes(schedule.startTime);
-              const scheduleEnd = this.parseTimeToMinutes(schedule.endTime);
+              const timeWindows = schedule.slots;
 
-              if (slotStart === scheduleStart && slotEnd === scheduleEnd) {
-                // Also check that the slot date is on or after this schedule's start date
-                const slotDateStr = slot.slotDate;
-                if (slotDateStr >= schedule.startDate) {
+              for (const timeWindow of timeWindows) {
+                const scheduleStart = this.parseTimeToMinutes(
+                  timeWindow.startTime,
+                );
+                const scheduleEnd = this.parseTimeToMinutes(timeWindow.endTime);
+
+                if (slotStart === scheduleStart && slotEnd === scheduleEnd) {
                   matchingDaySchedule = schedule;
+                  matchingTimeWindow = timeWindow;
                   break;
                 }
               }
+
+              if (matchingDaySchedule) {
+                break;
+              }
             }
 
-            if (!matchingDaySchedule) {
+            if (!matchingDaySchedule || !matchingTimeWindow) {
               // No matching time window for this slot or slot is before schedule start date
               continue;
             }
@@ -306,21 +391,19 @@ export class MembershipPlanController {
 
             if (!lockedSlot || lockedSlot.status !== "available") continue;
 
-            // Compute per-day membership slot price
-            const membershipSlotPrice = this.computeSlotPrice(
-              matchingDaySchedule.monthlyPrice,
-            );
+            const membershipSlotPrice = dto.perSlotPrice.toFixed(2);
 
             // Apply membership pricing and mark as booked
             lockedSlot.status = "booked";
             lockedSlot.slotType = "membership";
-            lockedSlot.price = membershipSlotPrice; // override price with membership rate
+            lockedSlot.price = membershipSlotPrice;
+            lockedSlot.membershipPlanId = savedPlan.id;
             await manager.save(FieldSlot, lockedSlot);
 
-            // Create booking record
+            // Create booking record with proper relationships
             const booking = manager.create(Booking, {
               fieldId: field.id,
-              slotId: slot.id,
+              slotId: lockedSlot.id,
               userId: user!.id,
               status: "booked",
               totalAmount: "0",
@@ -334,11 +417,67 @@ export class MembershipPlanController {
         return {
           success: true,
           plan: {
-            ...plan,
+            ...savedPlan,
           },
           syncedSlots: syncedCount,
         };
       },
     );
+  }
+
+  @Get(":id/played-slots")
+  @UseGuards(JwtAuthGuard)
+  async getPlayedSlots(
+    @Param("id") planId: string,
+    @CurrentAccount() account: AuthenticatedAccount,
+  ) {
+    const plan = await this.membershipPlanRepo.findOne({
+      where: { id: planId },
+      relations: ["field", "user"],
+    });
+
+    if (!plan || !plan.field || !plan.user) {
+      throw new NotFoundException("Membership plan not found");
+    }
+
+    // allow plan owner or the member themselves to view played slots
+    if (account.id !== plan.field.ownerId && account.id !== plan.user.id) {
+      throw new ForbiddenException("Not authorized to view this membership");
+    }
+
+    const now = DateTime.now().setZone("Asia/Kathmandu");
+    const today = now.toISODate();
+    const nowTime = now.toFormat("HH:mm:ss");
+
+    const bookings = await this.bookingRepo
+      .createQueryBuilder("booking")
+      .innerJoinAndSelect("booking.slot", "slot")
+      .where("booking.user_id = :userId", { userId: plan.user.id })
+      .andWhere("booking.booking_type = :type", { type: "membership" })
+      .andWhere("slot.membership_plan_id = :planId", { planId: plan.id })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where("slot.slot_date < :today", { today }).orWhere(
+            "slot.slot_date = :today AND slot.start_time < :nowTime",
+            { today, nowTime },
+          );
+        }),
+      )
+      .orderBy("slot.slot_date", "DESC")
+      .addOrderBy("slot.start_time", "DESC")
+      .getMany();
+
+    // Map to response format
+    return bookings.map((b) => ({
+      bookingId: b.id,
+      slotId: b.slotId,
+      slotDate: b.slot.slotDate,
+      startTime: b.slot.startTime,
+      endTime: b.slot.endTime,
+      bookingStatus: b.status,
+      bookingType: b.bookingType,
+      baseAmount: b.baseAmount,
+      totalAmount: b.totalAmount,
+    }));
   }
 }

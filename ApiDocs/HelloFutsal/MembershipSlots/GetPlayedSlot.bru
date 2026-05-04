@@ -1,0 +1,16 @@
+meta {
+  name: GetPlayedSlot
+  type: http
+  seq: 4
+}
+
+get {
+  url: http://localhost:3000/membership-plans/%3CPLAN_ID%3E/played-slots
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer <JWT>
+  Accept: application/json
+}

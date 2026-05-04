@@ -11,14 +11,17 @@ import { UserAccount } from "../../auth/entities/user.entity";
 import { Field } from "../../fields/entities/field.entity";
 
 /**
- * Flexible membership day schedule: each day can have independent start/end times
+ * Flexible membership day schedule: each day can have multiple start/end windows.
  */
-export interface MembershipDaySchedule {
-  day: string; // "monday", "tuesday", etc.
+export interface MembershipTimeWindow {
   startTime: string; // HH:mm format
   endTime: string; // HH:mm format
-  startDate: string; // YYYY-MM-DD
-  monthlyPrice: string; // stored as numeric string (precision handled by plan.monthly_price)
+}
+
+export interface MembershipDaySchedule {
+  day: string; // "monday", "tuesday", etc.
+  startTime: string[]; // HH:mm format
+  endTime: string[]; // HH:mm format
 }
 
 @Entity({ name: "membership_plans" })
@@ -41,7 +44,7 @@ export class MembershipPlan {
   field!: Field;
 
   @Column({ name: "days_of_week", type: "jsonb" })
-  daysOfWeek!: MembershipDaySchedule[]; // e.g., [{day: "sunday", startTime: "08:00", endTime: "09:00"}]
+  daysOfWeek!: MembershipDaySchedule[]; // e.g., [{day: "sunday", startTime: ["08:00"], endTime: ["09:00"]}]
 
   /**
    * Start date from which this membership plan becomes active.
@@ -51,8 +54,7 @@ export class MembershipPlan {
   startDate!: string;
 
   /**
-   * Monthly price charged for this membership plan.
-   * The per-slot price is computed as: monthlyPrice / 30
+   * Per-slot price charged for this membership plan.
    */
   @Column({
     name: "monthly_price",
@@ -61,7 +63,7 @@ export class MembershipPlan {
     scale: 2,
     default: 0,
   })
-  monthlyPrice!: string;
+  perSlotPrice!: string;
 
   @Column({ name: "active", type: "boolean", default: true })
   active!: boolean;

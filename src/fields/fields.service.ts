@@ -26,6 +26,7 @@ import { FieldSlot } from "./entities/field-slot.entity";
 import { GroundOwnerAccount } from "../auth/entities/ground-owner.entity";
 import { Booking } from "../booking/entities/booking.entity";
 import { MembershipPlan } from "../booking/entities/membership-plan.entity";
+import { getMembershipTimeWindows } from "../booking/membership-plan-schedule.utils";
 
 @Injectable()
 export class FieldsService {
@@ -466,14 +467,17 @@ export class FieldsService {
       membershipPlans.map(async (plan) => {
         const daysOfWeek = (plan.daysOfWeek as any[]) || [];
 
-        // Collect all days and times from this membership
-        const dayTimeSchedules = daysOfWeek.map((d) => ({
-          day: d.day,
-          startTime: d.startTime,
-          endTime: d.endTime,
-          startDate: d.startDate,
-          monthlyPrice: d.monthlyPrice,
-        }));
+        // Collect each selected time window from this membership
+        const dayTimeSchedules = daysOfWeek.flatMap((d) =>
+          getMembershipTimeWindows(d).map((timeWindow) => ({
+            planId: plan.id,
+            day: d.day,
+            startTime: timeWindow.startTime,
+            endTime: timeWindow.endTime,
+            startDate: plan.startDate,
+            perSlotPrice: plan.perSlotPrice,
+          })),
+        );
 
         // For each day schedule, find matching slots (filter by weekday and startDate)
         const dayNames = [
@@ -488,13 +492,14 @@ export class FieldsService {
 
         const schedulesWithSlots = await Promise.all(
           dayTimeSchedules.map(async (schedule) => {
-            // Get all available slots for this field and time window
+            // Get all available slots for this field and time window, scoped to the plan
             const allSlots = await this.fieldSlotsRepository.find({
               where: {
                 fieldId,
                 startTime: schedule.startTime,
                 endTime: schedule.endTime,
                 slotType: "membership",
+                membershipPlanId: schedule.planId,
               },
               order: {
                 slotDate: "ASC",
@@ -522,11 +527,12 @@ export class FieldsService {
             });
 
             return {
+              planId: schedule.planId,
               day: schedule.day,
               startTime: schedule.startTime,
               endTime: schedule.endTime,
               startDate: schedule.startDate,
-              monthlyPrice: schedule.monthlyPrice,
+              perSlotPrice: schedule.perSlotPrice,
               slots: slots.map((s) => ({
                 id: s.id,
                 slotDate: s.slotDate,

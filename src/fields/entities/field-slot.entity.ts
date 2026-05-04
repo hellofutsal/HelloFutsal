@@ -9,6 +9,7 @@ import {
   UpdateDateColumn,
 } from "typeorm";
 import { Field } from "./field.entity";
+import { MembershipPlan } from "../../booking/entities/membership-plan.entity";
 
 export type FieldSlotStatus =
   | "available"
@@ -33,6 +34,13 @@ export class FieldSlot {
   })
   @JoinColumn({ name: "field_id" })
   field!: Field;
+
+  @Column({ name: "membership_plan_id", type: "uuid", nullable: true })
+  membershipPlanId!: string | null;
+
+  @ManyToOne(() => MembershipPlan, { onDelete: "SET NULL", nullable: true })
+  @JoinColumn({ name: "membership_plan_id" })
+  membershipPlan!: MembershipPlan | null;
 
   @Column({ name: "slot_date", type: "date" })
   slotDate!: string;
