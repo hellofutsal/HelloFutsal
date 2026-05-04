@@ -145,7 +145,7 @@ export class MembershipPaymentService {
           lockedBooking.baseAmount = plan.perSlotPrice;
           lockedBooking.totalAmount = plan.perSlotPrice;
 
-          lockedSlot.status = "confirmed";
+          lockedSlot.status = "completed";
           lockedSlot.slotType = "membership";
           lockedSlot.price = plan.perSlotPrice;
           lockedSlot.membershipPlanId = plan.id;
