@@ -576,22 +576,34 @@ export class MembershipPlanController {
       async (manager) => {
         const planRepo = manager.getRepository(MembershipPlan);
 
-        // Reload plan with lock and relations
+        // Lock only the plan row. Avoid joining relations in the locking query
+        // because Postgres rejects FOR UPDATE on the nullable side of outer joins.
         const lockedPlan = await planRepo
           .createQueryBuilder("plan")
-          .setLock("pessimistic_write")
-          .leftJoinAndSelect("plan.field", "field")
-          .leftJoinAndSelect("plan.user", "user")
           .where("plan.id = :id", { id: planId })
+          .setLock("pessimistic_write")
           .getOne();
 
         if (!lockedPlan) {
-          throw new NotFoundException("Membership plan not found");
+          throw new NotFoundException(
+            `Membership plan not found for id ${planId}. Please use the exact membership plan id from the database.`,
+          );
+        }
+
+        const planWithRelations = await planRepo.findOne({
+          where: { id: planId },
+          relations: ["field", "user"],
+        });
+
+        if (!planWithRelations?.field || !planWithRelations.user) {
+          throw new NotFoundException(
+            `Membership plan not found for id ${planId}. Please use the exact membership plan id from the database.`,
+          );
         }
 
         // Authorize: field owner or membership holder can record payment
-        const isFieldOwner = account.id === lockedPlan.field.ownerId;
-        const isMembershipHolder = account.id === lockedPlan.user.id;
+        const isFieldOwner = account.id === planWithRelations.field.ownerId;
+        const isMembershipHolder = account.id === planWithRelations.user.id;
         if (!isFieldOwner && !isMembershipHolder) {
           throw new ForbiddenException(
             "Only field owner or membership holder can record payment",
