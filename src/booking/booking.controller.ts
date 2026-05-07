@@ -43,6 +43,15 @@ export class BookingController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Patch(":slotId/cancel")
+  cancelBooking(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("slotId", new ParseUUIDPipe()) slotId: string,
+  ) {
+    return this.bookingService.cancelBooking(account, slotId);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get("field/:fieldId")
   listBookingsByField(
     @CurrentAccount() account: AuthenticatedAccount,
