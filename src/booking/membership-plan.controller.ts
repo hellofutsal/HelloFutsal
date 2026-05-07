@@ -26,6 +26,7 @@ import {
 } from "./dto/create-membership-plan.dto";
 import { CancelMembershipPlanDto } from "./dto/cancel-membership-plan.dto";
 import { UpgradeMembershipPriceDto } from "./dto/upgrade-membership-price.dto";
+import { UpdateMembershipPlanDto } from "./dto/update-membership-plan.dto";
 import { MembershipPricingHistory } from "./entities/membership-pricing-history.entity";
 import { UserAccount } from "../auth/entities/user.entity";
 import { Field } from "../fields/entities/field.entity";
@@ -248,22 +249,97 @@ export class MembershipPlanController {
     });
   }
 
-  @Patch(":id/cancel")
+  /**
+   * Unified endpoint to update membership plan
+   * Supports: cancellation (with endDate), price upgrade (with effectiveFromDate & newPrice), or slot updates (with timeRange)
+   */
+  @Patch(":id")
   @UseGuards(JwtAuthGuard)
-  async cancelMembershipPlan(
+  async updateMembershipPlan(
     @Param("id", new ParseUUIDPipe()) membershipId: string,
-    @Body() dto: CancelMembershipPlanDto,
+    @Body() dto: UpdateMembershipPlanDto,
     @CurrentAccount() currentUser: AuthenticatedAccount,
   ) {
-    // Validate user is admin
     if (currentUser.role !== "admin") {
-      throw new ForbiddenException("Only admins can cancel membership plans");
+      throw new ForbiddenException("Only admins can update membership plans");
     }
 
-    // Validate endDate is not in the past
+    // Determine operation type based on provided fields
+    const hasEndDate = dto.endDate !== undefined;
+    const hasPriceUpgrade =
+      dto.effectiveFromDate !== undefined && dto.newPrice !== undefined;
+    const hasTimeRangeUpdate = dto.timeRange !== undefined;
+    const hasBasicPlanUpdate =
+      dto.userName !== undefined ||
+      dto.phoneNumber !== undefined ||
+      dto.fieldId !== undefined ||
+      dto.perSlotPrice !== undefined ||
+      dto.startDate !== undefined ||
+      dto.active !== undefined;
+
+    if (
+      !hasEndDate &&
+      !hasPriceUpgrade &&
+      !hasTimeRangeUpdate &&
+      !hasBasicPlanUpdate
+    ) {
+      throw new BadRequestException(
+        "Must provide endDate (cancellation), effectiveFromDate+newPrice (price upgrade), timeRange (slot update), or membership fields to update",
+      );
+    }
+
+    if (
+      (hasEndDate && hasPriceUpgrade) ||
+      (hasEndDate && hasTimeRangeUpdate) ||
+      (hasPriceUpgrade && hasTimeRangeUpdate) ||
+      (hasEndDate && hasBasicPlanUpdate) ||
+      (hasPriceUpgrade && hasBasicPlanUpdate)
+    ) {
+      throw new BadRequestException(
+        "Can only perform one cancellation or price-upgrade operation per request. Membership detail updates can be combined with slot updates.",
+      );
+    }
+
+    // Execute cancellation if endDate provided
+    if (hasEndDate) {
+      return this.performMembershipCancellation(
+        membershipId,
+        dto.endDate,
+        currentUser,
+      );
+    }
+
+    // Execute price upgrade if effectiveFromDate and newPrice provided
+    if (hasPriceUpgrade) {
+      return this.performPriceUpgrade(
+        membershipId,
+        dto.effectiveFromDate,
+        dto.newPrice,
+        currentUser,
+      );
+    }
+
+    // Execute slot time update if timeRange provided
+    if (hasTimeRangeUpdate) {
+      return this.performSlotTimeUpdate(membershipId, dto, currentUser);
+    }
+
+    if (hasBasicPlanUpdate) {
+      return this.performMembershipDetailUpdate(membershipId, dto, currentUser);
+    }
+  }
+
+  /**
+   * Helper method: Cancel membership with end date
+   */
+  private async performMembershipCancellation(
+    membershipId: string,
+    endDate: string,
+    currentUser: AuthenticatedAccount,
+  ) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const cancelDate = new Date(dto.endDate);
+    const cancelDate = new Date(endDate);
     cancelDate.setHours(0, 0, 0, 0);
     if (cancelDate < today) {
       throw new ConflictException("End date must be today or in the future");
@@ -274,7 +350,6 @@ export class MembershipPlanController {
       const bookingRepo = manager.getRepository(Booking);
       const slotRepo = manager.getRepository(FieldSlot);
 
-      // Get membership with field ownership check
       const membership = await membershipRepo
         .createQueryBuilder("plan")
         .innerJoinAndSelect("plan.field", "field")
@@ -291,7 +366,6 @@ export class MembershipPlanController {
         throw new ConflictException("Membership plan is already inactive");
       }
 
-      // Find all booked membership slots on or after the endDate
       const membershipBookings = await bookingRepo
         .createQueryBuilder("booking")
         .innerJoinAndSelect("booking.slot", "slot")
@@ -305,10 +379,9 @@ export class MembershipPlanController {
         )
         .andWhere("booking.booking_type = :type", { type: "membership" })
         .andWhere("booking.status = :status", { status: "booked" })
-        .andWhere("slot.slot_date >= :endDate", { endDate: dto.endDate })
+        .andWhere("slot.slot_date >= :endDate", { endDate: endDate })
         .getMany();
 
-      // Release slots back to available
       for (const booking of membershipBookings) {
         booking.status = "cancelled";
         await bookingRepo.save(booking);
@@ -319,12 +392,12 @@ export class MembershipPlanController {
         await slotRepo.save(booking.slot);
       }
 
-      // Mark membership as inactive with end date
       membership.active = false;
-      membership.endDate = dto.endDate;
+      membership.endDate = endDate;
       await membershipRepo.save(membership);
 
       return {
+        operation: "cancelled",
         membershipPlan: {
           id: membership.id,
           active: membership.active,
@@ -336,6 +409,341 @@ export class MembershipPlanController {
         },
         releasedBookings: membershipBookings.length,
         message: `Membership cancelled. ${membershipBookings.length} future bookings released.`,
+      };
+    });
+  }
+
+  /**
+   * Helper method: Upgrade membership price from effective date
+   */
+  private async performPriceUpgrade(
+    membershipId: string,
+    effectiveFromDate: string,
+    newPrice: number,
+    currentUser: AuthenticatedAccount,
+  ) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const effectiveDate = new Date(effectiveFromDate);
+    effectiveDate.setHours(0, 0, 0, 0);
+    if (effectiveDate < today) {
+      throw new ConflictException(
+        "Effective date must be today or in the future",
+      );
+    }
+
+    return this.fieldSlotRepo.manager.transaction(async (manager) => {
+      const membershipRepo = manager.getRepository(MembershipPlan);
+      const pricingRepo = manager.getRepository(MembershipPricingHistory);
+
+      const membership = await membershipRepo
+        .createQueryBuilder("plan")
+        .innerJoinAndSelect("plan.field", "field")
+        .where("plan.id = :id", { id: membershipId })
+        .andWhere("field.owner_id = :ownerId", { ownerId: currentUser.id })
+        .setLock("pessimistic_write")
+        .getOne();
+
+      if (!membership) {
+        throw new NotFoundException("Membership plan not found");
+      }
+
+      if (!membership.active) {
+        throw new ConflictException(
+          "Cannot upgrade price for inactive membership",
+        );
+      }
+
+      const existingPrice = await pricingRepo.findOne({
+        where: {
+          membershipPlanId: membershipId,
+          effectiveFromDate: effectiveFromDate,
+        },
+      });
+
+      if (existingPrice) {
+        throw new ConflictException(
+          `Price already exists for date ${effectiveFromDate}`,
+        );
+      }
+
+      const pricingHistory = pricingRepo.create({
+        membershipPlanId: membershipId,
+        effectiveFromDate: effectiveFromDate,
+        perSlotPrice: newPrice.toFixed(2),
+      });
+
+      await pricingRepo.save(pricingHistory);
+
+      membership.perSlotPrice = newPrice.toFixed(2);
+      await membershipRepo.save(membership);
+
+      return {
+        operation: "price_upgraded",
+        membershipPlan: {
+          id: membership.id,
+          active: membership.active,
+          perSlotPrice: membership.perSlotPrice,
+          effectiveFromDate: effectiveFromDate,
+        },
+        message: `Price upgraded to ${newPrice} effective from ${effectiveFromDate}`,
+      };
+    });
+  }
+
+  /**
+   * Helper method: Update membership slot times (days and time windows)
+   */
+  private async performSlotTimeUpdate(
+    membershipId: string,
+    dto: UpdateMembershipPlanDto,
+    currentUser: AuthenticatedAccount,
+  ) {
+    const newTimeRange = dto.timeRange ?? [];
+
+    // Validate the new time range
+    this.validateMembershipScheduleShape(newTimeRange);
+
+    return this.fieldSlotRepo.manager.transaction(async (manager) => {
+      const membershipRepo = manager.getRepository(MembershipPlan);
+      const bookingRepo = manager.getRepository(Booking);
+      const slotRepo = manager.getRepository(FieldSlot);
+      const fieldRepo = manager.getRepository(Field);
+
+      const membership = await membershipRepo
+        .createQueryBuilder("plan")
+        .innerJoinAndSelect("plan.field", "field")
+        .where("plan.id = :id", { id: membershipId })
+        .andWhere("field.owner_id = :ownerId", { ownerId: currentUser.id })
+        .setLock("pessimistic_write")
+        .getOne();
+
+      if (!membership) {
+        throw new NotFoundException("Membership plan not found");
+      }
+
+      const willBeActive =
+        dto.active !== undefined ? dto.active : membership.active;
+
+      if (!willBeActive) {
+        throw new ConflictException(
+          "Cannot update slot times for inactive membership",
+        );
+      }
+
+      if (dto.fieldId !== undefined) {
+        const field = await fieldRepo.findOne({
+          where: { id: dto.fieldId, ownerId: currentUser.id },
+        });
+
+        if (!field) {
+          throw new NotFoundException(
+            `Field with id ${dto.fieldId} not found or access denied`,
+          );
+        }
+
+        membership.field = field;
+      }
+
+      if (dto.userName !== undefined) {
+        membership.userName = dto.userName;
+      }
+
+      if (dto.phoneNumber !== undefined) {
+        membership.phoneNumber = dto.phoneNumber;
+      }
+
+      if (dto.startDate !== undefined) {
+        membership.startDate = dto.startDate;
+      }
+
+      if (dto.perSlotPrice !== undefined) {
+        membership.perSlotPrice = dto.perSlotPrice.toFixed(2);
+      }
+
+      if (dto.active !== undefined) {
+        membership.active = dto.active;
+      }
+
+      // Get old day schedules to find removed slots
+      const oldSchedules = (membership.daysOfWeek as any[]) || [];
+      const newSchedules = this.transformTimeRangeToStorageFormat(newTimeRange);
+
+      // Find time slots that were removed (not in new schedule)
+      const removedTimeWindows: {
+        day: string;
+        startTime: string;
+        endTime: string;
+      }[] = [];
+      for (const oldDay of oldSchedules) {
+        const newDay = newSchedules.find((d) => d.day === oldDay.day);
+        if (!newDay) {
+          // Entire day removed
+          for (const slot of oldDay.slots || []) {
+            removedTimeWindows.push({
+              day: oldDay.day,
+              startTime: slot.startTime,
+              endTime: slot.endTime,
+            });
+          }
+        } else {
+          // Check for removed slots on this day
+          for (const oldSlot of oldDay.slots || []) {
+            const slotExists = (newDay.slots || []).some(
+              (s) =>
+                s.startTime === oldSlot.startTime &&
+                s.endTime === oldSlot.endTime,
+            );
+            if (!slotExists) {
+              removedTimeWindows.push({
+                day: oldDay.day,
+                startTime: oldSlot.startTime,
+                endTime: oldSlot.endTime,
+              });
+            }
+          }
+        }
+      }
+
+      // Cancel all future bookings for removed time slots
+      let cancelledCount = 0;
+      if (removedTimeWindows.length > 0) {
+        // Get all future slots for this membership with the removed times
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayString = today.toISOString().split("T")[0];
+
+        for (const removedWindow of removedTimeWindows) {
+          const slotsToRelease = await slotRepo
+            .createQueryBuilder("slot")
+            .innerJoinAndSelect("slot.booking", "booking")
+            .where("slot.membership_plan_id = :planId", {
+              planId: membershipId,
+            })
+            .andWhere("slot.slot_date >= :today", { today: todayString })
+            .andWhere("slot.start_time = :startTime", {
+              startTime: removedWindow.startTime,
+            })
+            .andWhere("slot.end_time = :endTime", {
+              endTime: removedWindow.endTime,
+            })
+            .getMany();
+
+          for (const slot of slotsToRelease) {
+            if (slot.booking && slot.booking.status === "booked") {
+              slot.booking.status = "cancelled";
+              await bookingRepo.save(slot.booking);
+              cancelledCount++;
+            }
+
+            slot.status = "available";
+            slot.slotType = "normal";
+            slot.membershipPlanId = null;
+            await slotRepo.save(slot);
+          }
+        }
+      }
+
+      // Update membership with new time range
+      membership.daysOfWeek = newSchedules;
+      await membershipRepo.save(membership);
+
+      return {
+        operation: "slot_times_updated",
+        membershipPlan: {
+          id: membership.id,
+          active: membership.active,
+          startDate: membership.startDate,
+          userName: membership.userName,
+          phoneNumber: membership.phoneNumber,
+          perSlotPrice: membership.perSlotPrice,
+          fieldId: membership.field.id,
+          daysOfWeek: membership.daysOfWeek,
+        },
+        removedTimeSlots: removedTimeWindows.length,
+        cancelledBookings: cancelledCount,
+        message: `Slot times updated. ${removedTimeWindows.length} time slots removed, ${cancelledCount} future bookings cancelled.`,
+      };
+    });
+  }
+
+  private async performMembershipDetailUpdate(
+    membershipId: string,
+    dto: UpdateMembershipPlanDto,
+    currentUser: AuthenticatedAccount,
+  ) {
+    return this.fieldSlotRepo.manager.transaction(async (manager) => {
+      const membershipRepo = manager.getRepository(MembershipPlan);
+      const fieldRepo = manager.getRepository(Field);
+
+      const membership = await membershipRepo
+        .createQueryBuilder("plan")
+        .innerJoinAndSelect("plan.field", "field")
+        .where("plan.id = :id", { id: membershipId })
+        .andWhere("field.owner_id = :ownerId", { ownerId: currentUser.id })
+        .setLock("pessimistic_write")
+        .getOne();
+
+      if (!membership) {
+        throw new NotFoundException("Membership plan not found");
+      }
+
+      if (dto.fieldId !== undefined) {
+        const field = await fieldRepo.findOne({
+          where: { id: dto.fieldId, ownerId: currentUser.id },
+        });
+
+        if (!field) {
+          throw new NotFoundException(
+            `Field with id ${dto.fieldId} not found or access denied`,
+          );
+        }
+
+        membership.field = field;
+      }
+
+      if (dto.userName !== undefined) {
+        membership.userName = dto.userName;
+      }
+
+      if (dto.phoneNumber !== undefined) {
+        membership.phoneNumber = dto.phoneNumber;
+      }
+
+      if (dto.startDate !== undefined) {
+        membership.startDate = dto.startDate;
+      }
+
+      if (dto.perSlotPrice !== undefined) {
+        membership.perSlotPrice = dto.perSlotPrice.toFixed(2);
+      }
+
+      if (dto.active !== undefined) {
+        membership.active = dto.active;
+      }
+
+      if (dto.timeRange !== undefined) {
+        this.validateMembershipScheduleShape(dto.timeRange);
+        membership.daysOfWeek = this.transformTimeRangeToStorageFormat(
+          dto.timeRange,
+        );
+      }
+
+      await membershipRepo.save(membership);
+
+      return {
+        operation: "membership_updated",
+        membershipPlan: {
+          id: membership.id,
+          active: membership.active,
+          startDate: membership.startDate,
+          userName: membership.userName,
+          phoneNumber: membership.phoneNumber,
+          perSlotPrice: membership.perSlotPrice,
+          fieldId: membership.field.id,
+          daysOfWeek: membership.daysOfWeek,
+        },
+        message: "Membership plan updated successfully.",
       };
     });
   }
