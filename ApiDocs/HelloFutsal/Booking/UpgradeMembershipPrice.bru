@@ -1,0 +1,26 @@
+meta {
+  name: UpgradeMembershipPrice
+  type: http
+  seq: 21
+}
+
+patch {
+  url: {{development}}/membership-plans/{{membershipId}}/upgrade-price
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "effectiveFromDate": "2026-06-01",
+    "newPrice": 1500
+  }
+}

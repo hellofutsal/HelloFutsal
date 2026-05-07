@@ -10,6 +10,7 @@ import {
   ForbiddenException,
   UseGuards,
   BadRequestException,
+  ParseUUIDPipe,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Brackets } from "typeorm";
@@ -23,6 +24,9 @@ import {
   MembershipDayScheduleDto,
   MembershipTimeWindowDto,
 } from "./dto/create-membership-plan.dto";
+import { CancelMembershipPlanDto } from "./dto/cancel-membership-plan.dto";
+import { UpgradeMembershipPriceDto } from "./dto/upgrade-membership-price.dto";
+import { MembershipPricingHistory } from "./entities/membership-pricing-history.entity";
 import { UserAccount } from "../auth/entities/user.entity";
 import { Field } from "../fields/entities/field.entity";
 import { FieldSlot } from "../fields/entities/field-slot.entity";
@@ -46,6 +50,8 @@ export class MembershipPlanController {
     private readonly fieldSlotRepo: Repository<FieldSlot>,
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
+    @InjectRepository(MembershipPricingHistory)
+    private readonly pricingHistoryRepo: Repository<MembershipPricingHistory>,
     private readonly fieldsService: FieldsService,
   ) {}
 
@@ -161,6 +167,177 @@ export class MembershipPlanController {
     end2: number,
   ): boolean {
     return (start1 < end2 && end1 > start2) || (start2 < end1 && end2 > start1);
+  }
+
+  @Patch(":id/upgrade-price")
+  @UseGuards(JwtAuthGuard)
+  async upgradeMembershipPrice(
+    @Param("id", new ParseUUIDPipe()) membershipId: string,
+    @Body() dto: UpgradeMembershipPriceDto,
+    @CurrentAccount() currentUser: AuthenticatedAccount,
+  ) {
+    if (currentUser.role !== "admin") {
+      throw new ForbiddenException("Only admins can upgrade membership prices");
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const effectiveDate = new Date(dto.effectiveFromDate);
+    effectiveDate.setHours(0, 0, 0, 0);
+    if (effectiveDate < today) {
+      throw new ConflictException(
+        "Effective date must be today or in the future",
+      );
+    }
+
+    return this.fieldSlotRepo.manager.transaction(async (manager) => {
+      const membershipRepo = manager.getRepository(MembershipPlan);
+      const pricingRepo = manager.getRepository(MembershipPricingHistory);
+
+      const membership = await membershipRepo
+        .createQueryBuilder("plan")
+        .innerJoinAndSelect("plan.field", "field")
+        .where("plan.id = :id", { id: membershipId })
+        .andWhere("field.owner_id = :ownerId", { ownerId: currentUser.id })
+        .setLock("pessimistic_write")
+        .getOne();
+
+      if (!membership) {
+        throw new NotFoundException("Membership plan not found");
+      }
+
+      if (!membership.active) {
+        throw new ConflictException(
+          "Cannot upgrade price for inactive membership",
+        );
+      }
+
+      const existingPrice = await pricingRepo.findOne({
+        where: {
+          membershipPlanId: membershipId,
+          effectiveFromDate: dto.effectiveFromDate,
+        },
+      });
+
+      if (existingPrice) {
+        throw new ConflictException(
+          `Price already exists for date ${dto.effectiveFromDate}`,
+        );
+      }
+
+      const pricingHistory = pricingRepo.create({
+        membershipPlanId: membershipId,
+        effectiveFromDate: dto.effectiveFromDate,
+        perSlotPrice: dto.newPrice.toFixed(2),
+      });
+
+      await pricingRepo.save(pricingHistory);
+
+      membership.perSlotPrice = dto.newPrice.toFixed(2);
+      await membershipRepo.save(membership);
+
+      return {
+        membershipPlan: {
+          id: membership.id,
+          active: membership.active,
+          perSlotPrice: membership.perSlotPrice,
+          effectiveFromDate: dto.effectiveFromDate,
+        },
+        message: `Price upgraded to ${dto.newPrice} effective from ${dto.effectiveFromDate}`,
+      };
+    });
+  }
+
+  @Patch(":id/cancel")
+  @UseGuards(JwtAuthGuard)
+  async cancelMembershipPlan(
+    @Param("id", new ParseUUIDPipe()) membershipId: string,
+    @Body() dto: CancelMembershipPlanDto,
+    @CurrentAccount() currentUser: AuthenticatedAccount,
+  ) {
+    // Validate user is admin
+    if (currentUser.role !== "admin") {
+      throw new ForbiddenException("Only admins can cancel membership plans");
+    }
+
+    // Validate endDate is not in the past
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const cancelDate = new Date(dto.endDate);
+    cancelDate.setHours(0, 0, 0, 0);
+    if (cancelDate < today) {
+      throw new ConflictException("End date must be today or in the future");
+    }
+
+    return this.fieldSlotRepo.manager.transaction(async (manager) => {
+      const membershipRepo = manager.getRepository(MembershipPlan);
+      const bookingRepo = manager.getRepository(Booking);
+      const slotRepo = manager.getRepository(FieldSlot);
+
+      // Get membership with field ownership check
+      const membership = await membershipRepo
+        .createQueryBuilder("plan")
+        .innerJoinAndSelect("plan.field", "field")
+        .where("plan.id = :id", { id: membershipId })
+        .andWhere("field.owner_id = :ownerId", { ownerId: currentUser.id })
+        .setLock("pessimistic_write")
+        .getOne();
+
+      if (!membership) {
+        throw new NotFoundException("Membership plan not found");
+      }
+
+      if (!membership.active) {
+        throw new ConflictException("Membership plan is already inactive");
+      }
+
+      // Find all booked membership slots on or after the endDate
+      const membershipBookings = await bookingRepo
+        .createQueryBuilder("booking")
+        .innerJoinAndSelect("booking.slot", "slot")
+        .where("booking.slot_id IN (", (qb) =>
+          qb
+            .select("slot.id")
+            .from(FieldSlot, "slot")
+            .where("slot.membership_plan_id = :planId", {
+              planId: membershipId,
+            }),
+        )
+        .andWhere("booking.booking_type = :type", { type: "membership" })
+        .andWhere("booking.status = :status", { status: "booked" })
+        .andWhere("slot.slot_date >= :endDate", { endDate: dto.endDate })
+        .getMany();
+
+      // Release slots back to available
+      for (const booking of membershipBookings) {
+        booking.status = "cancelled";
+        await bookingRepo.save(booking);
+
+        booking.slot.status = "available";
+        booking.slot.slotType = "normal";
+        booking.slot.membershipPlanId = null;
+        await slotRepo.save(booking.slot);
+      }
+
+      // Mark membership as inactive with end date
+      membership.active = false;
+      membership.endDate = dto.endDate;
+      await membershipRepo.save(membership);
+
+      return {
+        membershipPlan: {
+          id: membership.id,
+          active: membership.active,
+          endDate: membership.endDate,
+          perSlotPrice: membership.perSlotPrice,
+          startDate: membership.startDate,
+          userName: membership.userName,
+          phoneNumber: membership.phoneNumber,
+        },
+        releasedBookings: membershipBookings.length,
+        message: `Membership cancelled. ${membershipBookings.length} future bookings released.`,
+      };
+    });
   }
 
   @Post()
