@@ -145,7 +145,7 @@ export class FieldSlotCronService {
       upcomingDates.push(dateStr);
     }
 
-    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    const todayInNepalDate = todayInNepal.toFormat("yyyy-MM-dd");
 
     const plans = await this.membershipPlanRepo.find({
       where: { active: true },
@@ -154,7 +154,7 @@ export class FieldSlotCronService {
 
     // Filter plans that are still within their active period
     const activePlans = plans.filter(
-      (plan) => !plan.endDate || plan.endDate >= today,
+      (plan) => !plan.endDate || plan.endDate >= todayInNepalDate,
     );
 
     this.logger.log(
@@ -277,6 +277,9 @@ export class FieldSlotCronService {
                       .where("booking.slot_id = :slotId", {
                         slotId: existingSlot.id,
                       })
+                      .andWhere("booking.status != :cancelled", {
+                        cancelled: "cancelled",
+                      })
                       .andWhere("booking.booking_type = :bookingType", {
                         bookingType: "membership",
                       })
@@ -337,6 +340,9 @@ export class FieldSlotCronService {
                       .getRepository(Booking)
                       .createQueryBuilder("booking")
                       .where("booking.slot_id = :slotId", { slotId: slot.id })
+                      .andWhere("booking.status != :cancelled", {
+                        cancelled: "cancelled",
+                      })
                       .getOne();
                     if (existingBooking) {
                       existingBooking.userId = plan.user.id;
@@ -360,6 +366,9 @@ export class FieldSlotCronService {
                     .getRepository(Booking)
                     .createQueryBuilder("booking")
                     .where("booking.slot_id = :slotId", { slotId: slot.id })
+                    .andWhere("booking.status != :cancelled", {
+                      cancelled: "cancelled",
+                    })
                     .getOne();
 
                   if (booking) {

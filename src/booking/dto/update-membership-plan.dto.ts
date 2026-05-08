@@ -1,6 +1,5 @@
 import {
   IsOptional,
-  IsDateString,
   IsNumber,
   IsPositive,
   IsArray,
@@ -8,7 +7,9 @@ import {
   IsString,
   IsUUID,
   Validate,
+  ValidateNested,
 } from "class-validator";
+import { Type } from "class-transformer";
 import { MembershipDayScheduleDto } from "./create-membership-plan.dto";
 import { DateYYYYMMDDConstraint } from "./date-yyyymmdd.constraint";
 
@@ -37,6 +38,8 @@ export class UpdateMembershipPlanDto {
 
   @IsOptional()
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MembershipDayScheduleDto)
   timeRange?: MembershipDayScheduleDto[];
 
   @IsOptional()
@@ -44,11 +47,11 @@ export class UpdateMembershipPlanDto {
   active?: boolean;
 
   @IsOptional()
-  @IsDateString()
+  @Validate(DateYYYYMMDDConstraint)
   endDate?: string;
 
   @IsOptional()
-  @IsDateString()
+  @Validate(DateYYYYMMDDConstraint)
   effectiveFromDate?: string;
 
   @IsOptional()

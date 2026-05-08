@@ -76,6 +76,6 @@ export class CreateMembershipPricingHistory1780000000003 implements MigrationInt
       );
     }
 
-    await queryRunner.dropTable("membership_pricing_history");
+    await queryRunner.dropTable("membership_pricing_history", true);
   }
 }
