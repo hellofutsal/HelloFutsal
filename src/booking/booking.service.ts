@@ -321,6 +321,83 @@ export class BookingService {
     });
   }
 
+  async cancelBooking(account: AuthenticatedAccount, slotId: string) {
+    this.ensureAdmin(account);
+
+    return this.fieldSlotsRepository.manager.transaction(async (manager) => {
+      const bookingRepository = manager.getRepository(Booking);
+      const slotRepository = manager.getRepository(FieldSlot);
+
+      const booking = await bookingRepository
+        .createQueryBuilder("booking")
+        .innerJoinAndSelect("booking.slot", "slot")
+        .innerJoinAndSelect("booking.field", "field")
+        .where("booking.slot_id = :slotId", { slotId })
+        .andWhere("field.owner_id = :ownerId", { ownerId: account.id })
+        .setLock("pessimistic_write")
+        .getOne();
+
+      if (!booking) {
+        throw new NotFoundException("Booking not found");
+      }
+
+      if (booking.status === "completed") {
+        throw new ConflictException("Completed bookings cannot be cancelled");
+      }
+
+      if (booking.status !== "booked") {
+        throw new ConflictException("Only booked bookings can be cancelled");
+      }
+
+      const slot = await slotRepository
+        .createQueryBuilder("slot")
+        .innerJoinAndSelect("slot.field", "field")
+        .where("slot.id = :slotId", { slotId: booking.slotId })
+        .andWhere("field.owner_id = :ownerId", { ownerId: account.id })
+        .setLock("pessimistic_write")
+        .getOne();
+
+      if (!slot) {
+        throw new NotFoundException("Slot not found");
+      }
+
+      booking.status = "cancelled";
+      await bookingRepository.save(booking);
+
+      slot.status = "available";
+      await slotRepository.save(slot);
+
+      return {
+        booking: {
+          id: booking.id,
+          fieldId: booking.fieldId,
+          slotId: booking.slotId,
+          userId: booking.userId,
+          status: booking.status,
+          bookingType: booking.bookingType,
+          discount: booking.discount,
+          baseAmount: booking.baseAmount,
+          totalAmount: booking.totalAmount,
+          extraAmount: booking.extraAmount,
+          discountAmount: booking.discountAmount,
+          createdAt: booking.createdAt,
+          updatedAt: booking.updatedAt,
+        },
+        slot: {
+          id: slot.id,
+          fieldId: slot.fieldId,
+          slotDate: slot.slotDate,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          slotType: slot.slotType,
+          status: slot.status,
+          price: this.formatAmount(slot.price),
+        },
+        message: "Booking cancelled successfully",
+      };
+    });
+  }
+
   async listBookingsByField(account: AuthenticatedAccount, fieldId: string) {
     this.ensureAdmin(account);
 

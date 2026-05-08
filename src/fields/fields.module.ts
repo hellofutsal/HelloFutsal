@@ -6,6 +6,7 @@ import { Field } from "./entities/field.entity";
 import { FieldSlot } from "./entities/field-slot.entity";
 import { GroundOwnerAccount } from "../auth/entities/ground-owner.entity";
 import { MembershipPlan } from "../booking/entities/membership-plan.entity";
+import { MembershipPricingHistory } from "../booking/entities/membership-pricing-history.entity";
 import { Booking } from "../booking/entities/booking.entity";
 import { FieldSlotCronService } from "./cron/field-slot-cron.service";
 import { FieldSlotSyncService } from "./cron/field-slot-sync.service";
@@ -21,6 +22,7 @@ import { FieldsService } from "./fields.service";
       FieldSlot,
       GroundOwnerAccount,
       MembershipPlan,
+      MembershipPricingHistory,
       Booking,
     ]),
   ],

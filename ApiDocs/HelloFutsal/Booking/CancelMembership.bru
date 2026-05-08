@@ -1,0 +1,25 @@
+meta {
+  name: CancelMembership
+  type: http
+  seq: 20
+}
+
+patch {
+  url: {{development}}/membership-plans/{{membershipId}}/cancel
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "endDate": "2026-05-20"
+  }
+}

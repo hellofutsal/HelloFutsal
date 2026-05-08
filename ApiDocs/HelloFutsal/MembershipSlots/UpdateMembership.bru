@@ -1,0 +1,39 @@
+meta {
+  name: UpdateMembership
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{development}}/membership-plans/{{membershipId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "userName": "Ayush Morning Slot 1",
+    "phoneNumber": "9867654567",
+    "fieldId": "{{fieldId}}",
+    "perSlotPrice": 2000,
+    "effectiveFromDate": "2026-05-20",
+    "startDate": "2026-05-02",
+    "timeRange": [
+      {
+        "day": "tuesday",
+        "slots": [
+          {
+            "startTime": "06:00",
+            "endTime": "07:00"
+          }
+        ]
+      }
+    ],
+    "active": true
+  }
+}
