@@ -304,7 +304,7 @@ export class MembershipPlanController {
     if (hasEndDate) {
       return this.performMembershipCancellation(
         membershipId,
-        dto.endDate,
+        dto.endDate!,
         currentUser,
       );
     }
@@ -313,8 +313,8 @@ export class MembershipPlanController {
     if (hasPriceUpgrade) {
       return this.performPriceUpgrade(
         membershipId,
-        dto.effectiveFromDate,
-        dto.newPrice,
+        dto.effectiveFromDate!,
+        dto.newPrice!,
         currentUser,
       );
     }
@@ -369,14 +369,7 @@ export class MembershipPlanController {
       const membershipBookings = await bookingRepo
         .createQueryBuilder("booking")
         .innerJoinAndSelect("booking.slot", "slot")
-        .where("booking.slot_id IN (", (qb) =>
-          qb
-            .select("slot.id")
-            .from(FieldSlot, "slot")
-            .where("slot.membership_plan_id = :planId", {
-              planId: membershipId,
-            }),
-        )
+        .where("slot.membership_plan_id = :planId", { planId: membershipId })
         .andWhere("booking.booking_type = :type", { type: "membership" })
         .andWhere("booking.status = :status", { status: "booked" })
         .andWhere("slot.slot_date >= :endDate", { endDate: endDate })
@@ -566,7 +559,7 @@ export class MembershipPlanController {
       }
 
       // Get old day schedules to find removed slots
-      const oldSchedules = (membership.daysOfWeek as any[]) || [];
+      const oldSchedules = membership.daysOfWeek || [];
       const newSchedules = this.transformTimeRangeToStorageFormat(newTimeRange);
 
       // Find time slots that were removed (not in new schedule)
@@ -577,9 +570,12 @@ export class MembershipPlanController {
       }[] = [];
       for (const oldDay of oldSchedules) {
         const newDay = newSchedules.find((d) => d.day === oldDay.day);
+        const oldWindows = getMembershipTimeWindows(oldDay);
+        const newWindows = newDay ? getMembershipTimeWindows(newDay) : [];
+
         if (!newDay) {
           // Entire day removed
-          for (const slot of oldDay.slots || []) {
+          for (const slot of oldWindows) {
             removedTimeWindows.push({
               day: oldDay.day,
               startTime: slot.startTime,
@@ -588,8 +584,8 @@ export class MembershipPlanController {
           }
         } else {
           // Check for removed slots on this day
-          for (const oldSlot of oldDay.slots || []) {
-            const slotExists = (newDay.slots || []).some(
+          for (const oldSlot of oldWindows) {
+            const slotExists = newWindows.some(
               (s) =>
                 s.startTime === oldSlot.startTime &&
                 s.endTime === oldSlot.endTime,
@@ -614,9 +610,9 @@ export class MembershipPlanController {
         const todayString = today.toISOString().split("T")[0];
 
         for (const removedWindow of removedTimeWindows) {
-          const slotsToRelease = await slotRepo
-            .createQueryBuilder("slot")
-            .innerJoinAndSelect("slot.booking", "booking")
+          const bookingsToRelease = await bookingRepo
+            .createQueryBuilder("booking")
+            .innerJoinAndSelect("booking.slot", "slot")
             .where("slot.membership_plan_id = :planId", {
               planId: membershipId,
             })
@@ -629,17 +625,17 @@ export class MembershipPlanController {
             })
             .getMany();
 
-          for (const slot of slotsToRelease) {
-            if (slot.booking && slot.booking.status === "booked") {
-              slot.booking.status = "cancelled";
-              await bookingRepo.save(slot.booking);
+          for (const booking of bookingsToRelease) {
+            if (booking.status === "booked") {
+              booking.status = "cancelled";
+              await bookingRepo.save(booking);
               cancelledCount++;
             }
 
-            slot.status = "available";
-            slot.slotType = "normal";
-            slot.membershipPlanId = null;
-            await slotRepo.save(slot);
+            booking.slot.status = "available";
+            booking.slot.slotType = "normal";
+            booking.slot.membershipPlanId = null;
+            await slotRepo.save(booking.slot);
           }
         }
       }
