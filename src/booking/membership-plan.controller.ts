@@ -475,11 +475,11 @@ export class MembershipPlanController {
     endDate: string,
     currentUser: AuthenticatedAccount,
   ) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const cancelDate = new Date(endDate);
-    cancelDate.setHours(0, 0, 0, 0);
-    if (cancelDate < today) {
+    const today = DateTime.now().setZone("Asia/Kathmandu").startOf("day");
+    const cancelDate = DateTime.fromISO(endDate, {
+      zone: "Asia/Kathmandu",
+    }).startOf("day");
+    if (!cancelDate.isValid || cancelDate < today) {
       throw new ConflictException("End date must be today or in the future");
     }
 
@@ -555,11 +555,11 @@ export class MembershipPlanController {
     newPrice: number,
     currentUser: AuthenticatedAccount,
   ) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const effectiveDate = new Date(effectiveFromDate);
-    effectiveDate.setHours(0, 0, 0, 0);
-    if (effectiveDate < today) {
+    const today = DateTime.now().setZone("Asia/Kathmandu").startOf("day");
+    const effectiveDate = DateTime.fromISO(effectiveFromDate, {
+      zone: "Asia/Kathmandu",
+    }).startOf("day");
+    if (!effectiveDate.isValid || effectiveDate < today) {
       throw new ConflictException(
         "Effective date must be today or in the future",
       );
@@ -709,7 +709,9 @@ export class MembershipPlanController {
       }
 
       if (dto.perSlotPrice !== undefined) {
-        membership.perSlotPrice = dto.perSlotPrice.toFixed(2);
+        throw new BadRequestException(
+          "Use effectiveFromDate and newPrice (price upgrade flow) to change perSlotPrice",
+        );
       }
 
       if (dto.active !== undefined) {
@@ -763,9 +765,10 @@ export class MembershipPlanController {
       let cancelledCount = 0;
       if (removedTimeWindows.length > 0) {
         // Get all future slots for this membership with the removed times
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayString = today.toISOString().split("T")[0];
+        const todayString = DateTime.now()
+          .setZone("Asia/Kathmandu")
+          .startOf("day")
+          .toISODate();
 
         for (const removedWindow of removedTimeWindows) {
           const bookingsToRelease = await bookingRepo
@@ -885,13 +888,6 @@ export class MembershipPlanController {
 
       if (dto.active !== undefined) {
         membership.active = dto.active;
-      }
-
-      if (dto.timeRange !== undefined) {
-        this.validateMembershipScheduleShape(dto.timeRange);
-        membership.daysOfWeek = this.transformTimeRangeToStorageFormat(
-          dto.timeRange,
-        );
       }
 
       await membershipRepo.save(membership);

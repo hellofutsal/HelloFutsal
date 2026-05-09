@@ -1,5 +1,7 @@
 import { Transform } from "class-transformer";
-import { IsString, Matches, IsDateString, IsOptional } from "class-validator";
+import { IsString, Matches, IsOptional, Validate } from "class-validator";
+import { DateYYYYMMDDConstraint } from "./date-yyyymmdd.constraint";
+import { BulkBookRangeConstraint } from "./bulk-book-range.constraint";
 
 export class BulkBookSlotsDto {
   @IsString()
@@ -11,10 +13,11 @@ export class BulkBookSlotsDto {
   )
   fieldId!: string;
 
-  @IsDateString()
+  @Validate(DateYYYYMMDDConstraint)
   startDate!: string; // YYYY-MM-DD
 
-  @IsDateString()
+  @Validate(DateYYYYMMDDConstraint)
+  @Validate(BulkBookRangeConstraint)
   endDate!: string; // YYYY-MM-DD
 
   @IsOptional()

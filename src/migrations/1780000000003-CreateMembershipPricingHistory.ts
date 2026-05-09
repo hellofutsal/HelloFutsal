@@ -16,7 +16,7 @@ export class CreateMembershipPricingHistory1780000000003 implements MigrationInt
             type: "uuid",
             isPrimary: true,
             generationStrategy: "uuid",
-            default: "gen_random_uuid()",
+            default: "uuid_generate_v4()",
           },
           {
             name: "membership_plan_id",
@@ -46,6 +46,7 @@ export class CreateMembershipPricingHistory1780000000003 implements MigrationInt
           {
             name: "idx_membership_pricing_plan_date",
             columnNames: ["membership_plan_id", "effective_from_date"],
+            isUnique: true,
           },
         ],
       }),

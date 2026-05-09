@@ -10,7 +10,7 @@ import {
 import { MembershipPlan } from "./membership-plan.entity";
 
 @Entity({ name: "membership_pricing_history" })
-@Index(["membershipPlanId", "effectiveFromDate"])
+@Index(["membershipPlanId", "effectiveFromDate"], { unique: true })
 export class MembershipPricingHistory {
   @PrimaryGeneratedColumn("uuid")
   id!: string;

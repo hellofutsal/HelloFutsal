@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -16,6 +17,7 @@ import { FieldSlot } from "../fields/entities/field-slot.entity";
 import { CreateBookingDto } from "./dto/create-booking.dto";
 import { ConfirmBookingDto } from "./dto/confirm-booking.dto";
 import { MembershipDaySchedule } from "./entities/membership-plan.entity";
+import { MembershipPricingHistory } from "./entities/membership-pricing-history.entity";
 import { getMembershipTimeWindows } from "./membership-plan-schedule.utils";
 
 @Injectable()
@@ -130,7 +132,12 @@ export class BookingService {
             );
 
           if (matchingPlan) {
-            slot.price = matchingPlan.perSlotPrice;
+            slot.price = await this.resolveEffectiveMembershipPrice(
+              manager,
+              matchingPlan.id,
+              slot.slotDate,
+              matchingPlan.perSlotPrice,
+            );
             slot.slotType = "membership";
             slot.membershipPlanId = matchingPlan.id;
             bookingType = "membership";
@@ -337,13 +344,27 @@ export class BookingService {
     }
 
     const rootTotalRaw = bulkConfirmDto?.totalAmount;
-    let perSlotAmount: number | undefined = undefined;
+    let splitAmountsByIndex: Array<number | undefined> = [];
     if (rootTotalRaw !== undefined) {
       const count = items.length;
       if (count === 0) {
         throw new NotFoundException("No bookings provided");
       }
-      perSlotAmount = Number((Number(rootTotalRaw) / count).toFixed(2));
+
+      const totalAmountNumber = Number(rootTotalRaw);
+      if (!Number.isFinite(totalAmountNumber) || totalAmountNumber <= 0) {
+        throw new BadRequestException("totalAmount must be a positive number");
+      }
+
+      const totalCents = Math.round(totalAmountNumber * 100);
+      const baseCents = Math.floor(totalCents / count);
+      const remainder = totalCents - baseCents * count;
+
+      splitAmountsByIndex = Array.from({ length: count }, (_, index) => {
+        // Distribute remaining cents to the first N slots.
+        const cents = baseCents + (index < remainder ? 1 : 0);
+        return Number((cents / 100).toFixed(2));
+      });
     }
 
     return this.fieldSlotsRepository.manager.transaction(async (manager) => {
@@ -353,7 +374,8 @@ export class BookingService {
       const results: any[] = [];
       const failed: any[] = [];
 
-      for (const it of items) {
+      for (let index = 0; index < items.length; index++) {
+        const it = items[index];
         try {
           const slotId = it.slotId;
 
@@ -394,7 +416,9 @@ export class BookingService {
 
           const baseAmount = Number(slot.price);
           const providedTotal =
-            perSlotAmount !== undefined ? perSlotAmount : undefined;
+            splitAmountsByIndex.length > 0
+              ? splitAmountsByIndex[index]
+              : undefined;
           const totalAmount =
             providedTotal === undefined ? baseAmount : Number(providedTotal);
 
@@ -516,6 +540,8 @@ export class BookingService {
       await bookingRepository.save(booking);
 
       slot.status = "available";
+      slot.slotType = "normal";
+      slot.membershipPlanId = null;
       await slotRepository.save(slot);
 
       return {
@@ -683,6 +709,33 @@ export class BookingService {
     const mobileNumber = phoneNumber.trim();
     const name = userName.trim();
 
+    const startDateObj = new Date(`${startDate}T00:00:00Z`);
+    const endDateObj = new Date(`${endDate}T00:00:00Z`);
+    if (
+      Number.isNaN(startDateObj.getTime()) ||
+      Number.isNaN(endDateObj.getTime())
+    ) {
+      throw new BadRequestException(
+        "startDate and endDate must be valid dates",
+      );
+    }
+    if (endDateObj < startDateObj) {
+      throw new BadRequestException("endDate must be on or after startDate");
+    }
+
+    const dayDiff = Math.floor(
+      (endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    if (dayDiff > 31) {
+      throw new BadRequestException("Date range cannot exceed 31 days");
+    }
+
+    if ((startTime && !endTime) || (!startTime && endTime)) {
+      throw new BadRequestException(
+        "startTime and endTime must be provided together",
+      );
+    }
+
     try {
       return await this.fieldSlotsRepository.manager.transaction(
         async (manager) => {
@@ -750,8 +803,13 @@ export class BookingService {
               .andWhere("slot.end_time <= :endTime", { endTime });
           }
 
-          const availableSlots = await slotQuery
-            .setLock("pessimistic_write")
+          const availableSlots = await slotQuery.getMany();
+
+          const candidatePlans = await membershipPlanRepository
+            .createQueryBuilder("plan")
+            .where("plan.field_id = :fieldId", { fieldId })
+            .andWhere("plan.user_id = :userId", { userId: user.id })
+            .andWhere("plan.active = true")
             .getMany();
 
           const bookedSlots: any[] = [];
@@ -760,44 +818,59 @@ export class BookingService {
           // Book each available slot
           for (const slot of availableSlots) {
             try {
+              const lockedSlot = await slotRepository
+                .createQueryBuilder("slot")
+                .where("slot.id = :slotId", { slotId: slot.id })
+                .andWhere("slot.status = :available", {
+                  available: "available",
+                })
+                .setLock("pessimistic_write")
+                .getOne();
+
+              if (!lockedSlot) {
+                failedBookings.push({
+                  slotDate: slot.slotDate,
+                  startTime: slot.startTime,
+                  endTime: slot.endTime,
+                  error: "Slot is no longer available",
+                });
+                continue;
+              }
+
               // Check if membership plan applies
               let bookingType: "normal" | "membership" = "normal";
-              const slotDayName = this.getDayName(slot.slotDate);
+              const slotDayName = this.getDayName(lockedSlot.slotDate);
 
-              const matchingPlan = await membershipPlanRepository
-                .createQueryBuilder("plan")
-                .where("plan.field_id = :fieldId", { fieldId })
-                .andWhere("plan.user_id = :userId", { userId: user.id })
-                .andWhere("plan.start_date <= :slotDate", {
-                  slotDate: slot.slotDate,
-                })
-                .andWhere("plan.active = true")
-                .getMany()
-                .then((plans) =>
-                  plans.find((p) =>
-                    (p.daysOfWeek as MembershipDaySchedule[]).some(
-                      (schedule) =>
-                        schedule.day === slotDayName &&
-                        getMembershipTimeWindows(schedule).some(
-                          (window) =>
-                            window.startTime === slot.startTime &&
-                            window.endTime === slot.endTime,
-                        ),
-                    ),
+              const matchingPlan = candidatePlans.find(
+                (p) =>
+                  p.startDate <= lockedSlot.slotDate &&
+                  (p.daysOfWeek as MembershipDaySchedule[]).some(
+                    (schedule) =>
+                      schedule.day === slotDayName &&
+                      getMembershipTimeWindows(schedule).some(
+                        (window) =>
+                          window.startTime === lockedSlot.startTime &&
+                          window.endTime === lockedSlot.endTime,
+                      ),
                   ),
-                );
+              );
 
               if (matchingPlan) {
-                slot.price = matchingPlan.perSlotPrice;
-                slot.slotType = "membership";
-                slot.membershipPlanId = matchingPlan.id;
+                lockedSlot.price = await this.resolveEffectiveMembershipPrice(
+                  manager,
+                  matchingPlan.id,
+                  lockedSlot.slotDate,
+                  matchingPlan.perSlotPrice,
+                );
+                lockedSlot.slotType = "membership";
+                lockedSlot.membershipPlanId = matchingPlan.id;
                 bookingType = "membership";
               }
 
               const booking = await bookingRepository.save(
                 bookingRepository.create({
                   fieldId: slot.fieldId,
-                  slotId: slot.id,
+                  slotId: lockedSlot.id,
                   userId: user.id,
                   status: "booked",
                   bookingType,
@@ -805,8 +878,8 @@ export class BookingService {
                 }),
               );
 
-              slot.status = "booked";
-              await slotRepository.save(slot);
+              lockedSlot.status = "booked";
+              await slotRepository.save(lockedSlot);
 
               bookedSlots.push({
                 booking: {
@@ -816,18 +889,21 @@ export class BookingService {
                   userId: booking.userId,
                   status: booking.status,
                   bookingType: booking.bookingType,
-                  baseAmount: this.formatAmount(slot.price),
-                  totalAmount: this.sumAmounts(slot.price, booking.totalAmount),
+                  baseAmount: this.formatAmount(lockedSlot.price),
+                  totalAmount: this.sumAmounts(
+                    lockedSlot.price,
+                    booking.totalAmount,
+                  ),
                 },
                 slot: {
-                  id: slot.id,
-                  fieldId: slot.fieldId,
-                  slotDate: slot.slotDate,
-                  startTime: slot.startTime,
-                  endTime: slot.endTime,
-                  slotType: slot.slotType,
-                  status: slot.status,
-                  price: this.formatAmount(slot.price),
+                  id: lockedSlot.id,
+                  fieldId: lockedSlot.fieldId,
+                  slotDate: lockedSlot.slotDate,
+                  startTime: lockedSlot.startTime,
+                  endTime: lockedSlot.endTime,
+                  slotType: lockedSlot.slotType,
+                  status: lockedSlot.status,
+                  price: this.formatAmount(lockedSlot.price),
                 },
               });
             } catch (error) {
@@ -864,6 +940,26 @@ export class BookingService {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
+
+  private async resolveEffectiveMembershipPrice(
+    manager: any,
+    membershipPlanId: string,
+    slotDate: string,
+    fallbackPrice: string,
+  ): Promise<string> {
+    const pricingHistory: MembershipPricingHistory | null = await manager
+      .getRepository(MembershipPricingHistory)
+      .createQueryBuilder("history")
+      .where("history.membership_plan_id = :membershipPlanId", {
+        membershipPlanId,
+      })
+      .andWhere("history.effective_from_date <= :slotDate", { slotDate })
+      .orderBy("history.effective_from_date", "DESC")
+      .limit(1)
+      .getOne();
+
+    return pricingHistory ? pricingHistory.perSlotPrice : fallbackPrice;
+  }
 
   /**
    * Returns the lowercase day name (e.g. "monday") for a YYYY-MM-DD date string.

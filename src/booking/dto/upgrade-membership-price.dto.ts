@@ -1,10 +1,11 @@
-import { IsDateString, IsNumber, IsPositive } from "class-validator";
+import { IsNumber, IsPositive, Validate } from "class-validator";
+import { DateYYYYMMDDConstraint } from "./date-yyyymmdd.constraint";
 
 export class UpgradeMembershipPriceDto {
-  @IsDateString()
+  @Validate(DateYYYYMMDDConstraint)
   effectiveFromDate!: string; // YYYY-MM-DD format
 
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   newPrice!: number;
 }
