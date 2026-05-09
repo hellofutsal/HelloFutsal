@@ -13,6 +13,8 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { ConfirmBookingDto } from "./dto/confirm-booking.dto";
 import { CreateBookingDto } from "./dto/create-booking.dto";
+import { BulkBookSlotsDto } from "./dto/bulk-book-slots.dto";
+import { BulkConfirmBookingsDto } from "./dto/bulk-confirm-bookings.dto";
 import { BookingService } from "./booking.service";
 
 @Controller("bookings")
@@ -26,6 +28,15 @@ export class BookingController {
     @Body() createBookingDto: CreateBookingDto,
   ) {
     return this.bookingService.createBooking(account, createBookingDto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch("bulk/confirm")
+  bulkConfirmBookings(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Body() bulkConfirmDto: BulkConfirmBookingsDto,
+  ) {
+    return this.bookingService.bulkConfirmBookings(account, bulkConfirmDto);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -49,6 +60,15 @@ export class BookingController {
     @Param("slotId", new ParseUUIDPipe()) slotId: string,
   ) {
     return this.bookingService.cancelBooking(account, slotId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("bulk/time-range")
+  bulkBookSlots(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Body() bulkBookDto: BulkBookSlotsDto,
+  ) {
+    return this.bookingService.bulkBookSlots(account, bulkBookDto);
   }
 
   @UseGuards(JwtAuthGuard)

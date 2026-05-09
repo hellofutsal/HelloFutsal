@@ -321,6 +321,157 @@ export class BookingService {
     });
   }
 
+  async bulkConfirmBookings(
+    account: AuthenticatedAccount,
+    bulkConfirmDto: any, // BulkConfirmBookingsDto
+  ) {
+    this.ensureAdmin(account);
+
+    const items: Array<{
+      slotId: string;
+      discount?: boolean;
+    }> = bulkConfirmDto?.bookings || [];
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new NotFoundException("No bookings provided");
+    }
+
+    const rootTotalRaw = bulkConfirmDto?.totalAmount;
+    let perSlotAmount: number | undefined = undefined;
+    if (rootTotalRaw !== undefined) {
+      const count = items.length;
+      if (count === 0) {
+        throw new NotFoundException("No bookings provided");
+      }
+      perSlotAmount = Number((Number(rootTotalRaw) / count).toFixed(2));
+    }
+
+    return this.fieldSlotsRepository.manager.transaction(async (manager) => {
+      const bookingRepository = manager.getRepository(Booking);
+      const slotRepository = manager.getRepository(FieldSlot);
+
+      const results: any[] = [];
+      const failed: any[] = [];
+
+      for (const it of items) {
+        try {
+          const slotId = it.slotId;
+
+          const booking = await bookingRepository
+            .createQueryBuilder("booking")
+            .innerJoinAndSelect("booking.slot", "slot")
+            .innerJoinAndSelect("booking.field", "field")
+            .where("booking.slot_id = :slotId", { slotId })
+            .andWhere("field.owner_id = :ownerId", { ownerId: account.id })
+            .setLock("pessimistic_write")
+            .getOne();
+
+          if (!booking) {
+            throw new NotFoundException(`Booking not found for slot ${slotId}`);
+          }
+
+          if (booking.status === "completed") {
+            throw new ConflictException("Booking is already confirmed");
+          }
+
+          if (booking.status !== "booked") {
+            throw new ConflictException(
+              "Only booked slots can be confirmed as completed",
+            );
+          }
+
+          const slot = await slotRepository
+            .createQueryBuilder("slot")
+            .innerJoinAndSelect("slot.field", "field")
+            .where("slot.id = :slotId", { slotId: booking.slotId })
+            .andWhere("field.owner_id = :ownerId", { ownerId: account.id })
+            .setLock("pessimistic_write")
+            .getOne();
+
+          if (!slot) {
+            throw new NotFoundException(`Slot not found for slot ${slotId}`);
+          }
+
+          const baseAmount = Number(slot.price);
+          const providedTotal =
+            perSlotAmount !== undefined ? perSlotAmount : undefined;
+          const totalAmount =
+            providedTotal === undefined ? baseAmount : Number(providedTotal);
+
+          if (it.discount === undefined) {
+            if (totalAmount < baseAmount) {
+              booking.discount = true;
+              booking.discountAmount = this.formatAmount(
+                baseAmount - totalAmount,
+              );
+              booking.extraAmount = this.formatAmount(0);
+            } else if (totalAmount > baseAmount) {
+              booking.discount = false;
+              booking.extraAmount = this.formatAmount(totalAmount - baseAmount);
+              booking.discountAmount = this.formatAmount(0);
+            } else {
+              booking.discount = false;
+              booking.extraAmount = this.formatAmount(0);
+              booking.discountAmount = this.formatAmount(0);
+            }
+          } else {
+            if (it.discount && totalAmount >= baseAmount) {
+              throw new ConflictException(
+                "When discount is enabled, total amount should be less than base amount.",
+              );
+            }
+
+            if (!it.discount && totalAmount < baseAmount) {
+              throw new ConflictException(
+                "Total amount cannot be less than base amount. Please toggle on the discount flag to apply discount.",
+              );
+            }
+
+            booking.discount = it.discount;
+            if (booking.discount) {
+              booking.discountAmount = this.formatAmount(
+                baseAmount - totalAmount,
+              );
+              booking.extraAmount = this.formatAmount(0);
+            } else {
+              booking.extraAmount = this.formatAmount(totalAmount - baseAmount);
+              booking.discountAmount = this.formatAmount(0);
+            }
+          }
+
+          booking.baseAmount = this.formatAmount(slot.price);
+          booking.totalAmount = this.formatAmount(totalAmount);
+          booking.status = "completed";
+          await bookingRepository.save(booking);
+
+          slot.status = "completed";
+          await slotRepository.save(slot);
+
+          results.push({
+            slotId: slot.id,
+            bookingId: booking.id,
+            status: booking.status,
+          });
+        } catch (error) {
+          failed.push({
+            item: it,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      return {
+        summary: {
+          total: items.length,
+          confirmed: results.length,
+          failed: failed.length,
+        },
+        confirmed: results,
+        failed,
+      };
+    });
+  }
+
   async cancelBooking(account: AuthenticatedAccount, slotId: string) {
     this.ensureAdmin(account);
 
@@ -511,6 +662,203 @@ export class BookingService {
         price: this.formatAmount(booking.slot.price),
       },
     };
+  }
+
+  async bulkBookSlots(
+    account: AuthenticatedAccount,
+    bulkBookDto: any, // BulkBookSlotsDto
+  ) {
+    this.ensureAdmin(account);
+
+    const {
+      fieldId,
+      startDate,
+      endDate,
+      startTime,
+      endTime,
+      userName,
+      phoneNumber,
+    } = bulkBookDto;
+
+    const mobileNumber = phoneNumber.trim();
+    const name = userName.trim();
+
+    try {
+      return await this.fieldSlotsRepository.manager.transaction(
+        async (manager) => {
+          const slotRepository = manager.getRepository(FieldSlot);
+          const userRepository = manager.getRepository(UserAccount);
+          const bookingRepository = manager.getRepository(Booking);
+          const membershipPlanRepository =
+            manager.getRepository(MembershipPlan);
+          const fieldRepository = manager.getRepository(Field);
+
+          // Verify field ownership
+          const field = await fieldRepository
+            .createQueryBuilder("field")
+            .where("field.id = :fieldId", { fieldId })
+            .andWhere("field.owner_id = :ownerId", { ownerId: account.id })
+            .setLock("pessimistic_write")
+            .getOne();
+
+          if (!field) {
+            throw new NotFoundException("Field not found");
+          }
+
+          // Find or create user
+          let user = await userRepository
+            .createQueryBuilder("user")
+            .where("user.mobile_number = :mobileNumber", { mobileNumber })
+            .setLock("pessimistic_write")
+            .getOne();
+
+          if (!user) {
+            try {
+              user = userRepository.create({
+                name,
+                mobileNumber,
+                passwordHash: null,
+              });
+              user = await userRepository.save(user);
+            } catch (error) {
+              if (this.isUniqueConstraintViolation(error)) {
+                throw new ConflictException(
+                  "User with this phone number already exists",
+                );
+              }
+
+              throw error;
+            }
+          } else if (!user.name) {
+            user.name = name;
+            user = await userRepository.save(user);
+          }
+
+          // Find all available slots in the date (and optional time) range
+          let slotQuery = slotRepository
+            .createQueryBuilder("slot")
+            .innerJoinAndSelect("slot.field", "field")
+            .where("slot.field_id = :fieldId", { fieldId })
+            .andWhere("slot.slot_date >= :startDate", { startDate })
+            .andWhere("slot.slot_date <= :endDate", { endDate })
+            .andWhere("slot.status = :available", { available: "available" });
+
+          // If startTime and endTime are provided, treat them as a range
+          if (startTime && endTime) {
+            slotQuery = slotQuery
+              .andWhere("slot.start_time >= :startTime", { startTime })
+              .andWhere("slot.end_time <= :endTime", { endTime });
+          }
+
+          const availableSlots = await slotQuery
+            .setLock("pessimistic_write")
+            .getMany();
+
+          const bookedSlots: any[] = [];
+          const failedBookings: any[] = [];
+
+          // Book each available slot
+          for (const slot of availableSlots) {
+            try {
+              // Check if membership plan applies
+              let bookingType: "normal" | "membership" = "normal";
+              const slotDayName = this.getDayName(slot.slotDate);
+
+              const matchingPlan = await membershipPlanRepository
+                .createQueryBuilder("plan")
+                .where("plan.field_id = :fieldId", { fieldId })
+                .andWhere("plan.user_id = :userId", { userId: user.id })
+                .andWhere("plan.start_date <= :slotDate", {
+                  slotDate: slot.slotDate,
+                })
+                .andWhere("plan.active = true")
+                .getMany()
+                .then((plans) =>
+                  plans.find((p) =>
+                    (p.daysOfWeek as MembershipDaySchedule[]).some(
+                      (schedule) =>
+                        schedule.day === slotDayName &&
+                        getMembershipTimeWindows(schedule).some(
+                          (window) =>
+                            window.startTime === slot.startTime &&
+                            window.endTime === slot.endTime,
+                        ),
+                    ),
+                  ),
+                );
+
+              if (matchingPlan) {
+                slot.price = matchingPlan.perSlotPrice;
+                slot.slotType = "membership";
+                slot.membershipPlanId = matchingPlan.id;
+                bookingType = "membership";
+              }
+
+              const booking = await bookingRepository.save(
+                bookingRepository.create({
+                  fieldId: slot.fieldId,
+                  slotId: slot.id,
+                  userId: user.id,
+                  status: "booked",
+                  bookingType,
+                  totalAmount: this.formatAmount(0),
+                }),
+              );
+
+              slot.status = "booked";
+              await slotRepository.save(slot);
+
+              bookedSlots.push({
+                booking: {
+                  id: booking.id,
+                  fieldId: booking.fieldId,
+                  slotId: booking.slotId,
+                  userId: booking.userId,
+                  status: booking.status,
+                  bookingType: booking.bookingType,
+                  baseAmount: this.formatAmount(slot.price),
+                  totalAmount: this.sumAmounts(slot.price, booking.totalAmount),
+                },
+                slot: {
+                  id: slot.id,
+                  fieldId: slot.fieldId,
+                  slotDate: slot.slotDate,
+                  startTime: slot.startTime,
+                  endTime: slot.endTime,
+                  slotType: slot.slotType,
+                  status: slot.status,
+                  price: this.formatAmount(slot.price),
+                },
+              });
+            } catch (error) {
+              failedBookings.push({
+                slotDate: slot.slotDate,
+                startTime: slot.startTime,
+                endTime: slot.endTime,
+                error: error instanceof Error ? error.message : "Unknown error",
+              });
+            }
+          }
+
+          return {
+            summary: {
+              total: availableSlots.length,
+              booked: bookedSlots.length,
+              failed: failedBookings.length,
+            },
+            user: {
+              id: user.id,
+              name: user.name,
+              mobileNumber: user.mobileNumber,
+            },
+            bookedSlots,
+            failedBookings,
+          };
+        },
+      );
+    } catch (error) {
+      throw error;
+    }
   }
 
   // ---------------------------------------------------------------------------
