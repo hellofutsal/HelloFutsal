@@ -2,9 +2,9 @@ import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
   ValidationArguments,
-} from 'class-validator';
+} from "class-validator";
 
-@ValidatorConstraint({ name: 'DateYYYYMMDD', async: false })
+@ValidatorConstraint({ name: "DateYYYYMMDD", async: false })
 export class DateYYYYMMDDConstraint implements ValidatorConstraintInterface {
   validate(dateString: string) {
     // First check basic format with regex
@@ -13,7 +13,7 @@ export class DateYYYYMMDDConstraint implements ValidatorConstraintInterface {
     }
 
     // Parse the date components
-    const [yearStr, monthStr, dayStr] = dateString.split('-');
+    const [yearStr, monthStr, dayStr] = dateString.split("-");
     const year = parseInt(yearStr, 10);
     const month = parseInt(monthStr, 10);
     const day = parseInt(dayStr, 10);
@@ -25,7 +25,7 @@ export class DateYYYYMMDDConstraint implements ValidatorConstraintInterface {
 
     // Create a Date object and verify it matches the input
     const date = new Date(year, month - 1, day);
-    
+
     // Check if the date is valid and matches the input
     return (
       date.getFullYear() === year &&
@@ -35,6 +35,6 @@ export class DateYYYYMMDDConstraint implements ValidatorConstraintInterface {
   }
 
   defaultMessage(args: ValidationArguments) {
-    return 'startDate must be a valid calendar date in YYYY-MM-DD format';
+    return "Date must be in YYYY-MM-DD format";
   }
 }

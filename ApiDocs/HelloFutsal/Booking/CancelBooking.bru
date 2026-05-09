@@ -1,0 +1,19 @@
+meta {
+  name: CancelBooking
+  type: http
+  seq: 15
+}
+
+patch {
+  url: {{development}}/bookings/{{slotId}}/cancel
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  Content-Type: application/json
+}

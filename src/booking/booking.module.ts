@@ -12,6 +12,7 @@ import { MembershipPlanController } from "./membership-plan.controller";
 import { BookingRevenueModule } from "./revenue/booking-revenue.module";
 import { Field } from "../fields/entities/field.entity";
 import { FieldsModule } from "../fields/fields.module";
+import { MembershipPricingHistory } from "./entities/membership-pricing-history.entity";
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { FieldsModule } from "../fields/fields.module";
       UserAccount,
       MembershipPlan,
       Field,
+      MembershipPricingHistory,
       // membership payments
       require("./entities/membership-payment.entity").MembershipPayment,
     ]),

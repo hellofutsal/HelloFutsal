@@ -68,6 +68,13 @@ export class MembershipPlan {
   @Column({ name: "active", type: "boolean", default: true })
   active!: boolean;
 
+  /**
+   * End date of the membership plan. If set and passed, the plan is considered inactive.
+   * Used when a membership is cancelled or expires.
+   */
+  @Column({ name: "end_date", type: "date", nullable: true })
+  endDate!: string | null;
+
   @Column({
     name: "total_amount",
     type: "numeric",

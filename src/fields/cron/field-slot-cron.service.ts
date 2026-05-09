@@ -10,6 +10,7 @@ import {
   MembershipDaySchedule,
   MembershipPlan,
 } from "../../booking/entities/membership-plan.entity";
+import { MembershipPricingHistory } from "../../booking/entities/membership-pricing-history.entity";
 import { getMembershipTimeWindows } from "../../booking/membership-plan-schedule.utils";
 import { Booking } from "../../booking/entities/booking.entity";
 import { FieldSlot } from "../entities/field-slot.entity";
@@ -24,6 +25,8 @@ export class FieldSlotCronService {
     private readonly fieldSlotSyncService: FieldSlotSyncService,
     @InjectRepository(MembershipPlan)
     private readonly membershipPlanRepo: Repository<MembershipPlan>,
+    @InjectRepository(MembershipPricingHistory)
+    private readonly pricingHistoryRepo: Repository<MembershipPricingHistory>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotRepo: Repository<FieldSlot>,
     @InjectRepository(Booking)
@@ -142,23 +145,30 @@ export class FieldSlotCronService {
       upcomingDates.push(dateStr);
     }
 
+    const todayInNepalDate = todayInNepal.toFormat("yyyy-MM-dd");
+
     const plans = await this.membershipPlanRepo.find({
       where: { active: true },
       relations: ["field", "user"],
     });
 
-    this.logger.log(`Found ${plans.length} active membership plans`);
+    // Filter plans that are still within their active period
+    const activePlans = plans.filter(
+      (plan) => !plan.endDate || plan.endDate >= todayInNepalDate,
+    );
+
+    this.logger.log(
+      `Found ${plans.length} active membership plans (${activePlans.length} within active period)`,
+    );
     this.logger.log(`Upcoming dates to check: ${upcomingDates.join(", ")}`);
 
     let membershipProcessed = 0;
     let membershipSkipped = 0;
     let membershipCreated = 0;
 
-    for (const plan of plans) {
+    for (const plan of activePlans) {
       if (!plan.field || !plan.user) continue;
       if (!plan.startDate) continue;
-
-      const perSlotPrice = plan.perSlotPrice;
 
       this.logger.log(
         `Processing membership plan: User=${plan.user.name}, Field=${plan.field.fieldName}`,
@@ -267,6 +277,9 @@ export class FieldSlotCronService {
                       .where("booking.slot_id = :slotId", {
                         slotId: existingSlot.id,
                       })
+                      .andWhere("booking.status != :cancelled", {
+                        cancelled: "cancelled",
+                      })
                       .andWhere("booking.booking_type = :bookingType", {
                         bookingType: "membership",
                       })
@@ -296,7 +309,23 @@ export class FieldSlotCronService {
 
                   if (!slot) return false;
 
-                  slot.price = perSlotPrice;
+                  // Look up the effective price from pricing history for this slot date
+                  const pricingHistory = await manager
+                    .getRepository(MembershipPricingHistory)
+                    .createQueryBuilder("history")
+                    .where("history.membership_plan_id = :membershipPlanId", {
+                      membershipPlanId: plan.id,
+                    })
+                    .andWhere("history.effective_from_date <= :slotDate", {
+                      slotDate: upcomingDate,
+                    })
+                    .orderBy("history.effective_from_date", "DESC")
+                    .limit(1)
+                    .getOne();
+
+                  slot.price = pricingHistory
+                    ? pricingHistory.perSlotPrice
+                    : plan.perSlotPrice;
                   slot.membershipPlanId = plan.id;
 
                   // If slot is booked for non-membership, override it with membership booking
@@ -311,6 +340,9 @@ export class FieldSlotCronService {
                       .getRepository(Booking)
                       .createQueryBuilder("booking")
                       .where("booking.slot_id = :slotId", { slotId: slot.id })
+                      .andWhere("booking.status != :cancelled", {
+                        cancelled: "cancelled",
+                      })
                       .getOne();
                     if (existingBooking) {
                       existingBooking.userId = plan.user.id;
@@ -334,6 +366,9 @@ export class FieldSlotCronService {
                     .getRepository(Booking)
                     .createQueryBuilder("booking")
                     .where("booking.slot_id = :slotId", { slotId: slot.id })
+                    .andWhere("booking.status != :cancelled", {
+                      cancelled: "cancelled",
+                    })
                     .getOne();
 
                   if (booking) {
