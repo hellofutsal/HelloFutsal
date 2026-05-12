@@ -1088,6 +1088,45 @@ export class MembershipPlanController {
           totalAmount: b.slot.price,
         }));
 
+        const dayNames = [
+          "sunday",
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+          "saturday",
+        ] as const;
+
+        const scheduleByDay = (
+          (plan.daysOfWeek as MembershipDaySchedule[]) || []
+        )
+          .map((daySchedule) => {
+            const timeWindows = getMembershipTimeWindows(daySchedule).map(
+              (window) => ({
+                startTime:
+                  window.startTime.length >= 5
+                    ? window.startTime.slice(0, 5)
+                    : window.startTime,
+                endTime:
+                  window.endTime.length >= 5
+                    ? window.endTime.slice(0, 5)
+                    : window.endTime,
+              }),
+            );
+
+            return {
+              day: daySchedule.day,
+              perSlotPrice: updatedPlan?.perSlotPrice ?? plan.perSlotPrice,
+              timeWindows,
+            };
+          })
+          .sort(
+            (a, b) =>
+              dayNames.indexOf(a.day as (typeof dayNames)[number]) -
+              dayNames.indexOf(b.day as (typeof dayNames)[number]),
+          );
+
         return {
           plan: {
             id: updatedPlan?.id,
@@ -1097,7 +1136,9 @@ export class MembershipPlanController {
             dueAmount: updatedPlan?.dueAmount,
             extraPaidAmount: updatedPlan?.extraPaidAmount,
           },
-          playedSlots,
+          assignedSlots: {
+            byDay: scheduleByDay,
+          },
           summary: {
             totalSlots: bookings.length,
             totalAmount: updatedPlan?.totalAmount,
