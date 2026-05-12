@@ -1102,16 +1102,15 @@ export class MembershipPlanController {
           (plan.daysOfWeek as MembershipDaySchedule[]) || []
         )
           .map((daySchedule) => {
+            const formatTime = (timeValue: string) => {
+              const [hours = "0", minutes = "0"] = timeValue.split(":");
+              return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
+            };
+
             const timeWindows = getMembershipTimeWindows(daySchedule).map(
               (window) => ({
-                startTime:
-                  window.startTime.length >= 5
-                    ? window.startTime.slice(0, 5)
-                    : window.startTime,
-                endTime:
-                  window.endTime.length >= 5
-                    ? window.endTime.slice(0, 5)
-                    : window.endTime,
+                startTime: formatTime(window.startTime),
+                endTime: formatTime(window.endTime),
               }),
             );
 
