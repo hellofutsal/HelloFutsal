@@ -464,90 +464,112 @@ export class FieldsService {
       .getMany();
 
     // For each membership, find assigned slots
-    const membershipData = await Promise.all(
-      membershipPlans.map(async (plan) => {
-        const now = DateTime.now().setZone("Asia/Kathmandu");
-        const today = now.toISODate()!;
-        const nowTime = now.toFormat("HH:mm:ss");
+    const membershipData =
+      await this.membershipPlanRepository.manager.transaction(
+        async (manager) => {
+          const results = await Promise.all(
+            membershipPlans.map(async (plan) => {
+              const now = DateTime.now().setZone("Asia/Kathmandu");
+              const today = now.toISODate()!;
+              const nowTime = now.toFormat("HH:mm:ss");
 
-        const dayNames = [
-          "sunday",
-          "monday",
-          "tuesday",
-          "wednesday",
-          "thursday",
-          "friday",
-          "saturday",
-        ];
+              const dayNames = [
+                "sunday",
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+              ];
 
-        const formatTime = (timeValue: string) => {
-          const [hours = "0", minutes = "0"] = timeValue.split(":");
-          return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
-        };
+              const formatTime = (timeValue: string) => {
+                const [hours = "0", minutes = "0"] = timeValue.split(":");
+                return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
+              };
 
-        const daysGrouped = ((plan.daysOfWeek as any[]) || [])
-          .map((daySchedule) => ({
-            day: daySchedule.day,
-            perSlotPrice: plan.perSlotPrice,
-            timeWindows: getMembershipTimeWindows(daySchedule).map(
-              (timeWindow) => ({
-                startTime: formatTime(timeWindow.startTime),
-                endTime: formatTime(timeWindow.endTime),
-              }),
-            ),
-          }))
-          .sort((a, b) => dayNames.indexOf(a.day) - dayNames.indexOf(b.day));
+              const daysGrouped = ((plan.daysOfWeek as any[]) || [])
+                .map((daySchedule) => ({
+                  day: daySchedule.day,
+                  perSlotPrice: plan.perSlotPrice,
+                  timeWindows: getMembershipTimeWindows(daySchedule).map(
+                    (timeWindow) => ({
+                      startTime: formatTime(timeWindow.startTime),
+                      endTime: formatTime(timeWindow.endTime),
+                    }),
+                  ),
+                }))
+                .sort(
+                  (a, b) => dayNames.indexOf(a.day) - dayNames.indexOf(b.day),
+                );
 
-        const elapsedMembershipSlots = await this.fieldSlotsRepository.find({
-          where: {
-            fieldId,
-            membershipPlanId: plan.id,
-            slotType: "membership",
-          },
-          order: {
-            slotDate: "ASC",
-            startTime: "ASC",
-          },
-        });
+              const elapsedMembershipSlots = await manager
+                .getRepository(FieldSlot)
+                .find({
+                  where: {
+                    fieldId,
+                    membershipPlanId: plan.id,
+                    slotType: "membership",
+                  },
+                  order: {
+                    slotDate: "ASC",
+                    startTime: "ASC",
+                  },
+                });
 
-        const accruedSlots = elapsedMembershipSlots.filter((slot) => {
-          if (slot.slotDate < today) {
-            return true;
-          }
+              const accruedSlots = elapsedMembershipSlots.filter((slot) => {
+                if (slot.slotDate < today) {
+                  return true;
+                }
 
-          if (slot.slotDate > today) {
-            return false;
-          }
+                if (slot.slotDate > today) {
+                  return false;
+                }
 
-          return slot.startTime < nowTime;
-        });
+                return slot.startTime < nowTime;
+              });
 
-        const accruedSlotCount = accruedSlots.length;
-        const accruedTotalAmount = (
-          Number(plan.perSlotPrice || 0) * accruedSlotCount
-        ).toFixed(2);
-        const paidAmount = Number(plan.paidAmount || 0);
-        const dueAmount = Math.max(0, Number(accruedTotalAmount) - paidAmount);
-        const extraPaidAmount = Math.max(
-          0,
-          paidAmount - Number(accruedTotalAmount),
-        );
+              const accruedSlotCount = accruedSlots.length;
+              const accruedTotalAmount = accruedSlots
+                .reduce((sum, slot) => sum + Number(slot.price || 0), 0)
+                .toFixed(2);
+              const paidAmount = Number(plan.paidAmount || 0);
+              const dueAmount = Math.max(
+                0,
+                Number(accruedTotalAmount) - paidAmount,
+              );
+              const extraPaidAmount = Math.max(
+                0,
+                paidAmount - Number(accruedTotalAmount),
+              );
 
-        return {
-          id: plan.id,
-          userName: plan.userName,
-          user: plan.user ? { id: plan.user.id, name: plan.user.name } : null,
-          daysOfWeek: daysGrouped,
-          summary: {
-            totalSlots: accruedSlotCount,
-            totalAmount: accruedTotalAmount,
-            paidAmount: plan.paidAmount,
-            dueAmount: dueAmount.toFixed(2),
-            extraPaidAmount: extraPaidAmount.toFixed(2),
-          },
-        };
-      }),
-    );
+              // Update plan with calculated values
+              plan.totalAmount = accruedTotalAmount;
+              plan.dueAmount = dueAmount.toFixed(2);
+              plan.extraPaidAmount = extraPaidAmount.toFixed(2);
+              await manager.save(plan);
+
+              return {
+                id: plan.id,
+                userName: plan.userName,
+                user: plan.user
+                  ? { id: plan.user.id, name: plan.user.name }
+                  : null,
+                daysOfWeek: daysGrouped,
+                summary: {
+                  totalSlots: accruedSlotCount,
+                  totalAmount: accruedTotalAmount,
+                  paidAmount: plan.paidAmount,
+                  dueAmount: dueAmount.toFixed(2),
+                  extraPaidAmount: extraPaidAmount.toFixed(2),
+                },
+              };
+            }),
+          );
+
+          return results;
+        },
+      );
 
     return {
       field: {
