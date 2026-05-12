@@ -20,6 +20,7 @@ import { CreateFieldSlotDto } from "./dto/create-field-slot.dto";
 import { FieldSlotGenerator } from "./cron/field-slot-generator";
 import { FieldSlotSyncService } from "./cron/field-slot-sync.service";
 import { FieldRuleBook } from "./entities/field-rule-book.entity";
+import { FieldRuleBookHistory } from "./entities/field-rule-book-history.entity";
 import { Field } from "./entities/field.entity";
 import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity";
 import { FieldSlot } from "./entities/field-slot.entity";
@@ -808,7 +809,6 @@ export class FieldsService {
     return await this.fieldSettingRepository
       .createQueryBuilder("setting")
       .leftJoinAndSelect("setting.field", "field")
-      .leftJoinAndSelect("field.scheduleSettings", "scheduleSettings") // optional if needed
       .where("field.owner_id = :ownerId", { ownerId: account.id })
       .getMany();
   }
@@ -1025,13 +1025,73 @@ export class FieldsService {
       existingRuleBook.isActive,
       field.scheduleSettings.slotDurationMin,
     );
+    // Detect schedule-related changes (activeDays/timeRange/specificSlots)
+    const oldConfig = existingRuleBook.ruleConfig || {};
+    const newConfig = normalizedRuleBook.ruleConfig || {};
 
-    existingRuleBook.ruleName = normalizedRuleBook.ruleName;
-    existingRuleBook.slotSelectionType = normalizedRuleBook.slotSelectionType;
-    existingRuleBook.actionType = normalizedRuleBook.actionType;
-    existingRuleBook.value = normalizedRuleBook.value;
-    existingRuleBook.ruleConfig = normalizedRuleBook.ruleConfig;
-    existingRuleBook.isActive = normalizedRuleBook.isActive;
+    const scheduleKeys = ["allSlots", "timeRange", "specificSlots"];
+    const scheduleChanged = scheduleKeys.some((k) => {
+      const a = JSON.stringify((oldConfig as any)[k] ?? null);
+      const b = JSON.stringify((newConfig as any)[k] ?? null);
+      return a !== b;
+    });
+
+    const effectiveDate = (createFieldRuleBookDto as any)?.effectiveDate;
+
+    if (scheduleChanged) {
+      if (!effectiveDate) {
+        throw new BadRequestException(
+          "Editing activeDays/timeRange/specificSlots requires an effectiveDate to schedule the change",
+        );
+      }
+
+      // schedule a history entry (do not apply now if effective > today)
+      const todayString = new Date().toISOString().split("T")[0];
+      const historyRepo =
+        this.fieldRuleBooksRepository.manager.getRepository(
+          FieldRuleBookHistory,
+        );
+
+      const history = historyRepo.create({
+        ruleBookId: existingRuleBook.id,
+        effectiveFromDate: effectiveDate,
+        ruleConfig: newConfig,
+        isActive: normalizedRuleBook.isActive,
+      });
+
+      try {
+        await historyRepo.save(history);
+      } catch (error) {
+        this.logger.error("Failed to create rule-book history", error);
+        throw error;
+      }
+
+      // If effectiveDate is today or earlier, apply immediately as well
+      if (effectiveDate <= todayString) {
+        existingRuleBook.ruleName = normalizedRuleBook.ruleName;
+        existingRuleBook.slotSelectionType =
+          normalizedRuleBook.slotSelectionType;
+        existingRuleBook.actionType = normalizedRuleBook.actionType;
+        existingRuleBook.value = normalizedRuleBook.value;
+        existingRuleBook.ruleConfig = normalizedRuleBook.ruleConfig;
+        existingRuleBook.isActive = normalizedRuleBook.isActive;
+      } else {
+        // scheduled: return without triggering immediate sync
+        return {
+          ruleBook: existingRuleBook,
+          scheduled: true,
+          effectiveDate,
+        };
+      }
+    } else {
+      // Non-schedule changes: apply immediately
+      existingRuleBook.ruleName = normalizedRuleBook.ruleName;
+      existingRuleBook.slotSelectionType = normalizedRuleBook.slotSelectionType;
+      existingRuleBook.actionType = normalizedRuleBook.actionType;
+      existingRuleBook.value = normalizedRuleBook.value;
+      existingRuleBook.ruleConfig = normalizedRuleBook.ruleConfig;
+      existingRuleBook.isActive = normalizedRuleBook.isActive;
+    }
 
     let savedRuleBook: FieldRuleBook;
 

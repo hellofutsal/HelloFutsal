@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { QueryFailedError, Repository } from "typeorm";
 import { RuleBookSlotSelectionType } from "../dto/create-field-rule-book.dto";
 import { FieldRuleBook } from "../entities/field-rule-book.entity";
+import { FieldRuleBookHistory } from "../entities/field-rule-book-history.entity";
 import { Field } from "../entities/field.entity";
 import { FieldSlot } from "../entities/field-slot.entity";
 import { FieldSlotGenerator } from "./field-slot-generator";
@@ -88,8 +89,33 @@ export class FieldSlotSyncService {
             ),
           );
 
-          const activeRuleBooks = (field.ruleBooks ?? []).filter(
-            (ruleBook) => ruleBook.isActive,
+          // Load applicable history entries for this slotDate and merge overrides
+          const historyRepo = manager.getRepository(FieldRuleBookHistory);
+          const ruleBookIds = (field.ruleBooks ?? []).map((r) => r.id);
+          const histories =
+            ruleBookIds.length > 0
+              ? await historyRepo
+                  .createQueryBuilder("h")
+                  .where("h.rule_book_id IN (:...ids)", { ids: ruleBookIds })
+                  .andWhere("h.effective_from_date <= :slotDate", { slotDate })
+                  .orderBy("h.effective_from_date", "ASC")
+                  .getMany()
+              : [];
+
+          const ruleBooksMap = new Map(
+            (field.ruleBooks ?? []).map((r) => [r.id, { ...r }]),
+          );
+          for (const h of histories) {
+            const entry = ruleBooksMap.get(h.ruleBookId);
+            if (entry) {
+              // override config for dates >= effective
+              entry.ruleConfig = h.ruleConfig;
+              entry.isActive = h.isActive;
+            }
+          }
+
+          const activeRuleBooks = Array.from(ruleBooksMap.values()).filter(
+            (rb: any) => rb.isActive,
           );
 
           const specificRules = activeRuleBooks
