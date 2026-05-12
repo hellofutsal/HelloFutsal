@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Between, Brackets, In, QueryFailedError, Repository } from "typeorm";
+import { DateTime } from "luxon";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { CreateFieldDto } from "./dto/create-field.dto";
 import {
@@ -463,132 +464,112 @@ export class FieldsService {
       .getMany();
 
     // For each membership, find assigned slots
-    const membershipData = await Promise.all(
-      membershipPlans.map(async (plan) => {
-        const daysOfWeek = (plan.daysOfWeek as any[]) || [];
+    const membershipData =
+      await this.membershipPlanRepository.manager.transaction(
+        async (manager) => {
+          const results = await Promise.all(
+            membershipPlans.map(async (plan) => {
+              const now = DateTime.now().setZone("Asia/Kathmandu");
+              const today = now.toISODate()!;
+              const nowTime = now.toFormat("HH:mm:ss");
 
-        // Collect each selected time window from this membership
-        const dayTimeSchedules = daysOfWeek.flatMap((d) =>
-          getMembershipTimeWindows(d).map((timeWindow) => ({
-            planId: plan.id,
-            day: d.day,
-            startTime: timeWindow.startTime,
-            endTime: timeWindow.endTime,
-            startDate: plan.startDate,
-            perSlotPrice: plan.perSlotPrice,
-          })),
-        );
+              const dayNames = [
+                "sunday",
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+              ];
 
-        // For each day schedule, find matching slots (filter by weekday and startDate)
-        const dayNames = [
-          "sunday",
-          "monday",
-          "tuesday",
-          "wednesday",
-          "thursday",
-          "friday",
-          "saturday",
-        ];
+              const formatTime = (timeValue: string) => {
+                const [hours = "0", minutes = "0"] = timeValue.split(":");
+                return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
+              };
 
-        const schedulesWithSlots = await Promise.all(
-          dayTimeSchedules.map(async (schedule) => {
-            // Normalize times to DB `HH:MM:SS` when necessary so equality matches
-            const normalizeToDbTime = (t: string) =>
-              /^\d{2}:\d{2}$/.test(t) ? `${t}:00` : t;
+              const daysGrouped = ((plan.daysOfWeek as any[]) || [])
+                .map((daySchedule) => ({
+                  day: daySchedule.day,
+                  perSlotPrice: plan.perSlotPrice,
+                  timeWindows: getMembershipTimeWindows(daySchedule).map(
+                    (timeWindow) => ({
+                      startTime: formatTime(timeWindow.startTime),
+                      endTime: formatTime(timeWindow.endTime),
+                    }),
+                  ),
+                }))
+                .sort(
+                  (a, b) => dayNames.indexOf(a.day) - dayNames.indexOf(b.day),
+                );
 
-            const dbStartTime = normalizeToDbTime(schedule.startTime);
-            const dbEndTime = normalizeToDbTime(schedule.endTime);
+              const elapsedMembershipSlots = await manager
+                .getRepository(FieldSlot)
+                .find({
+                  where: {
+                    fieldId,
+                    membershipPlanId: plan.id,
+                    slotType: "membership",
+                  },
+                  order: {
+                    slotDate: "ASC",
+                    startTime: "ASC",
+                  },
+                });
 
-            // Get all slots for this field/time window that were marked for this membership
-            const allSlots = await this.fieldSlotsRepository.find({
-              where: {
-                fieldId,
-                startTime: dbStartTime,
-                endTime: dbEndTime,
-                slotType: "membership",
-                membershipPlanId: schedule.planId,
-              },
-              order: {
-                slotDate: "ASC",
-              },
-            });
+              const accruedSlots = elapsedMembershipSlots.filter((slot) => {
+                if (slot.slotDate < today) {
+                  return true;
+                }
 
-            // Filter slots by weekday and startDate
-            const slots = allSlots.filter((slot) => {
-              // Check if slot date is on or after the schedule start date
-              if (slot.slotDate < schedule.startDate) {
-                return false;
-              }
+                if (slot.slotDate > today) {
+                  return false;
+                }
 
-              // Check if slot date falls on the correct weekday
-              let slotDateObj: Date;
-              if (/^\d{4}-\d{2}-\d{2}$/.test(slot.slotDate)) {
-                const [year, month, day] = slot.slotDate.split("-").map(Number);
-                slotDateObj = new Date(year, month - 1, day);
-              } else {
-                slotDateObj = new Date(slot.slotDate);
-              }
+                return slot.startTime < nowTime;
+              });
 
-              const slotDayName = dayNames[slotDateObj.getDay()];
-              return slotDayName === schedule.day;
-            });
+              const accruedSlotCount = accruedSlots.length;
+              const accruedTotalAmount = accruedSlots
+                .reduce((sum, slot) => sum + Number(slot.price || 0), 0)
+                .toFixed(2);
+              const paidAmount = Number(plan.paidAmount || 0);
+              const dueAmount = Math.max(
+                0,
+                Number(accruedTotalAmount) - paidAmount,
+              );
+              const extraPaidAmount = Math.max(
+                0,
+                paidAmount - Number(accruedTotalAmount),
+              );
 
-            return {
-              planId: schedule.planId,
-              day: schedule.day,
-              startTime: schedule.startTime,
-              endTime: schedule.endTime,
-              startDate: schedule.startDate,
-              perSlotPrice: schedule.perSlotPrice,
-              slots: slots.map((s) => ({
-                id: s.id,
-                slotDate: s.slotDate,
-                status: s.status,
-                dbStartTime: s.startTime,
-                dbEndTime: s.endTime,
-              })),
-            };
-          }),
-        );
+              // Update plan with calculated values
+              plan.totalAmount = accruedTotalAmount;
+              plan.dueAmount = dueAmount.toFixed(2);
+              plan.extraPaidAmount = extraPaidAmount.toFixed(2);
+              await manager.save(plan);
 
-        // Group schedules by day so each day contains a unified `slots` array
-        const groupedByDay: Record<string, any> = {};
-        let planStartDate = plan.startDate;
-        for (const entry of schedulesWithSlots) {
-          if (!groupedByDay[entry.day]) {
-            groupedByDay[entry.day] = {
-              planId: entry.planId,
-              day: entry.day,
-              perSlotPrice: entry.perSlotPrice,
-              slots: [],
-            };
-          }
+              return {
+                id: plan.id,
+                userName: plan.userName,
+                user: plan.user
+                  ? { id: plan.user.id, name: plan.user.name }
+                  : null,
+                daysOfWeek: daysGrouped,
+                summary: {
+                  totalSlots: accruedSlotCount,
+                  totalAmount: accruedTotalAmount,
+                  paidAmount: plan.paidAmount,
+                  dueAmount: dueAmount.toFixed(2),
+                  extraPaidAmount: extraPaidAmount.toFixed(2),
+                },
+              };
+            }),
+          );
 
-          // push each slot and attach the corresponding start/end time
-          const fmt = (t?: string) =>
-            t ? (t.length >= 5 ? t.slice(0, 5) : t) : null;
-          for (const s of entry.slots) {
-            groupedByDay[entry.day].slots.push({
-              id: s.id,
-              slotDate: s.slotDate,
-              startTime: fmt(s.dbStartTime) || fmt(entry.startTime),
-              endTime: fmt(s.dbEndTime) || fmt(entry.endTime),
-              status: s.status,
-            });
-          }
-        }
-
-        const daysGrouped = Object.values(groupedByDay);
-
-        return {
-          id: plan.id,
-          startDate: planStartDate,
-          userName: plan.userName,
-          user: plan.user ? { id: plan.user.id, name: plan.user.name } : null,
-          daysOfWeek: daysGrouped,
-        };
-      }),
-    );
+          return results;
+        },
+      );
 
     return {
       field: {
