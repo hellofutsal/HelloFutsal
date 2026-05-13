@@ -55,30 +55,8 @@ export class AddEffectiveDateAndVersionFieldsToRuleBooks1780000000005 implements
       WHERE effective_date IS NULL
     `);
 
-    await queryRunner.query(`
-      UPDATE field_rule_book_history history
-      SET
-        rule_name = COALESCE(history.rule_name, rule_book.rule_name),
-        slot_selection_type = COALESCE(history.slot_selection_type, rule_book.slot_selection_type),
-        action_type = COALESCE(history.action_type, rule_book.action_type),
-        value = COALESCE(history.value, rule_book.value)
-      FROM field_rule_books rule_book
-      WHERE history.rule_book_id = rule_book.id
-        AND (
-          history.rule_name IS NULL
-          OR history.slot_selection_type IS NULL
-          OR history.action_type IS NULL
-          OR history.value IS NULL
-        )
-    `);
-
-    await queryRunner.query(`
-      ALTER TABLE field_rule_book_history
-      ALTER COLUMN rule_name SET NOT NULL,
-      ALTER COLUMN slot_selection_type SET NOT NULL,
-      ALTER COLUMN action_type SET NOT NULL,
-      ALTER COLUMN value SET NOT NULL
-    `);
+    // Legacy history rows remain nullable. Future inserts should be enforced
+    // separately with an insert-time rule or constraint.
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
