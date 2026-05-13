@@ -941,8 +941,8 @@ export class FieldsService {
       value: normalizedRuleBook.value,
       ruleConfig: normalizedRuleBook.ruleConfig,
       effectiveDate:
-        (createFieldRuleBookDto as any)?.effectiveDate ??
-        new Date().toISOString().split("T")[0],
+        createFieldRuleBookDto.effectiveDate ??
+        FieldSlotGenerator.getCurrentDateString(),
     });
 
     let savedRuleBook: FieldRuleBook;
@@ -1027,13 +1027,19 @@ export class FieldsService {
       existingRuleBook.isActive,
       field.scheduleSettings.slotDurationMin,
     );
-    const effectiveDate = (createFieldRuleBookDto as any)?.effectiveDate;
-    const todayString = new Date().toISOString().split("T")[0];
-    const appliedEffectiveDate = effectiveDate ?? todayString;
+    const appliedEffectiveDate =
+      createFieldRuleBookDto.effectiveDate ??
+      FieldSlotGenerator.getCurrentDateString();
 
     const previousEffectiveDate =
       existingRuleBook.effectiveDate ??
       existingRuleBook.createdAt.toISOString().split("T")[0];
+
+    if (appliedEffectiveDate < previousEffectiveDate) {
+      throw new BadRequestException(
+        "effectiveDate cannot be earlier than the current rule effective date",
+      );
+    }
 
     try {
       const savedRuleBook =

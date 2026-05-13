@@ -75,7 +75,7 @@ export class FieldSlotCronService {
     return hours * 60 + minutes;
   }
 
-  @Cron(CronExpression.EVERY_MINUTE, {
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, {
     timeZone: "Asia/Kathmandu",
   })
   async generateTomorrowSlotsAndBookMemberships(): Promise<void> {

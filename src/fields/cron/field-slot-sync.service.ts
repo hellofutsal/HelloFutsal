@@ -449,21 +449,6 @@ export class FieldSlotSyncService {
           ruleBook.effectiveDate ??
           ruleBook.createdAt.toISOString().split("T")[0];
 
-        if (currentEffectiveDate <= slotDate) {
-          versions.push({
-            id: ruleBook.id,
-            ruleName: ruleBook.ruleName,
-            slotSelectionType: ruleBook.slotSelectionType,
-            actionType: ruleBook.actionType,
-            value: ruleBook.value,
-            ruleConfig: ruleBook.ruleConfig,
-            isActive: ruleBook.isActive,
-            createdAt: ruleBook.createdAt,
-            updatedAt: ruleBook.updatedAt,
-            effectiveDate: currentEffectiveDate,
-          });
-        }
-
         for (const history of historiesByRuleBookId.get(ruleBook.id) ?? []) {
           if (history.effectiveFromDate > slotDate) {
             continue;
@@ -481,6 +466,21 @@ export class FieldSlotSyncService {
             createdAt: history.createdAt,
             updatedAt: history.createdAt,
             effectiveDate: history.effectiveFromDate,
+          });
+        }
+
+        if (currentEffectiveDate <= slotDate) {
+          versions.push({
+            id: ruleBook.id,
+            ruleName: ruleBook.ruleName,
+            slotSelectionType: ruleBook.slotSelectionType,
+            actionType: ruleBook.actionType,
+            value: ruleBook.value,
+            ruleConfig: ruleBook.ruleConfig,
+            isActive: ruleBook.isActive,
+            createdAt: ruleBook.createdAt,
+            updatedAt: ruleBook.updatedAt,
+            effectiveDate: currentEffectiveDate,
           });
         }
 

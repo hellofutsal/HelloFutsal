@@ -5,23 +5,27 @@ meta {
 }
 
 patch {
-  url: http://localhost:3000/fields/FIELD_ID/rule-books/RULE_BOOK_ID
+  url: {{development}}/fields/{{fieldId}}/rule-books/{{rulebookId}}
   body: json
-  auth: none
+  auth: bearer
 }
 
 headers {
-  Authorization: Bearer YOUR_TOKEN
   Content-Type: application/json
+  ~Authorization: Bearer YOUR_TOKEN
+}
+
+auth:bearer {
+  token: {{token}}
 }
 
 body:json {
   {
-    "effectiveDate": "2026-06-01",
+    "effectiveDate": "2026-05-21",
     "ruleName": "Early Bird Morning Special",
     "slotSelectionType": "timeRange",
     "actionType": "fixedPrice",
-    "value": 1000,
+    "value": 10,
     "activeDays": [
       "monday",
       "wednesday",

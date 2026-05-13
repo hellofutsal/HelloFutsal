@@ -71,6 +71,14 @@ export class AddEffectiveDateAndVersionFieldsToRuleBooks1780000000005 implements
           OR history.value IS NULL
         )
     `);
+
+    await queryRunner.query(`
+      ALTER TABLE field_rule_book_history
+      ALTER COLUMN rule_name SET NOT NULL,
+      ALTER COLUMN slot_selection_type SET NOT NULL,
+      ALTER COLUMN action_type SET NOT NULL,
+      ALTER COLUMN value SET NOT NULL
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
