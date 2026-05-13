@@ -1126,20 +1126,24 @@ export class FieldsService {
       throw new NotFoundException("Field not found");
     }
 
-    const activeFieldCount = await this.fieldsRepository.count({
-      where: { ownerId: account.id, isActive: true },
-    });
-
-    if (activeFieldCount <= 1) {
-      throw new BadRequestException(
-        "At least one active field must remain before deleting a field",
-      );
-    }
-
     await this.fieldsRepository.manager.transaction(async (manager) => {
+      const activeFieldCount = await manager
+        .getRepository(Field)
+        .createQueryBuilder("f")
+        .setLock("pessimistic_write")
+        .where("f.owner_id = :ownerId", { ownerId: account.id })
+        .andWhere("f.is_active = true")
+        .getCount();
+
+      if (activeFieldCount <= 1) {
+        throw new BadRequestException(
+          "At least one active field must remain before deleting a field",
+        );
+      }
+
       await manager
         .getRepository(Field)
-        .update({ id: fieldId }, { isActive: false });
+        .update({ id: fieldId, ownerId: account.id }, { isActive: false });
 
       await manager
         .getRepository(FieldRuleBook)
@@ -1187,6 +1191,21 @@ export class FieldsService {
     await this.fieldRuleBooksRepository.update(ruleBook.id, {
       isActive: false,
     });
+
+    try {
+      await this.fieldSlotSyncService.syncFieldWindow(
+        ruleBook.fieldId,
+        0,
+        this.initialSlotWindowDays,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to resync slots after deleting rule book id=${ruleBookId} for fieldId=${fieldId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+
+      throw error;
+    }
 
     return {
       success: true,
