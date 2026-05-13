@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { FieldRuleBook } from "./entities/field-rule-book.entity";
+import { FieldRuleBookHistory } from "./entities/field-rule-book-history.entity";
 import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity";
 import { Field } from "./entities/field.entity";
 import { FieldSlot } from "./entities/field-slot.entity";
@@ -19,6 +20,7 @@ import { FieldsService } from "./fields.service";
       Field,
       FieldScheduleSettings,
       FieldRuleBook,
+      FieldRuleBookHistory,
       FieldSlot,
       GroundOwnerAccount,
       MembershipPlan,

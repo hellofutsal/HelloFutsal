@@ -1,6 +1,13 @@
 import { BadRequestException } from "@nestjs/common";
 import { RuleBookActionType } from "../dto/create-field-rule-book.dto";
-import { FieldRuleBook } from "../entities/field-rule-book.entity";
+
+export interface RuleBookLike {
+  ruleName: string;
+  slotSelectionType: string;
+  actionType: RuleBookActionType;
+  value: string;
+  ruleConfig: Record<string, unknown>;
+}
 
 export class FieldSlotGenerator {
   static getCurrentDateString(): string {
@@ -61,9 +68,9 @@ export class FieldSlotGenerator {
     slot: { startTime: string; endTime: string },
     weekday: string,
     slotDate: string,
-    specificRules: FieldRuleBook[],
-    timeRangeRules: FieldRuleBook[],
-    allSlotRules: FieldRuleBook[],
+    specificRules: RuleBookLike[],
+    timeRangeRules: RuleBookLike[],
+    allSlotRules: RuleBookLike[],
     defaultPrice: string,
   ): string {
     const matchedSpecificRule = specificRules.find((ruleBook) => {
@@ -111,7 +118,7 @@ export class FieldSlotGenerator {
   }
 
   static resolvePriceByActionType(
-    ruleBook: FieldRuleBook,
+    ruleBook: RuleBookLike,
     basePrice: string,
   ): string {
     const actionType = ruleBook.actionType;
@@ -136,7 +143,7 @@ export class FieldSlotGenerator {
     return ruleValue.toFixed(2);
   }
 
-  static getRuleBookAllSlotsConfig(ruleBook: FieldRuleBook): {
+  static getRuleBookAllSlotsConfig(ruleBook: RuleBookLike): {
     activeDays: string[];
   } {
     const allSlots = ruleBook.ruleConfig.allSlots as
@@ -154,7 +161,7 @@ export class FieldSlotGenerator {
     };
   }
 
-  static getRuleBookTimeRange(ruleBook: FieldRuleBook): {
+  static getRuleBookTimeRange(ruleBook: RuleBookLike): {
     startTime: string;
     endTime: string;
     activeDays: string[];
@@ -176,7 +183,7 @@ export class FieldSlotGenerator {
     };
   }
 
-  static getRuleBookSpecificSlots(ruleBook: FieldRuleBook): Array<{
+  static getRuleBookSpecificSlots(ruleBook: RuleBookLike): Array<{
     activeDays: string[];
     startTime: string;
     endTime: string;

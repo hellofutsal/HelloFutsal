@@ -58,7 +58,7 @@ const channelBindingRequired =
     process.env.DB_CHANNEL_BINDING ?? process.env.PGCHANNELBINDING
   )?.toLowerCase() === "require";
 
-export default new DataSource({
+const AppDataSource = new DataSource({
   type: "postgres",
   host: process.env.DB_HOST ?? process.env.PGHOST ?? "localhost",
   port: databasePort,
@@ -73,9 +73,34 @@ export default new DataSource({
     Field,
     FieldScheduleSettings,
     FieldRuleBook,
+    // history entity
+    require("./fields/entities/field-rule-book-history.entity")
+      .FieldRuleBookHistory,
     FieldSlot,
     MembershipPlan,
     Booking,
   ],
   migrations: [join(__dirname, "migrations", "*{.ts,.js}")],
 });
+
+// Log entity list at startup to help verify metadata registration
+try {
+  const entities = (AppDataSource.options.entities as any[]) || [];
+  const names = entities.map((e: any) => {
+    if (!e) return String(e);
+    if (typeof e === "function" && e.name) return e.name;
+    if (e && e.constructor && e.constructor.name) return e.constructor.name;
+    try {
+      return JSON.stringify(e);
+    } catch {
+      return String(e);
+    }
+  });
+  // eslint-disable-next-line no-console
+  console.log("[DataSource] Registered entities:", names);
+} catch (err) {
+  // eslint-disable-next-line no-console
+  console.log("[DataSource] Failed to read entities:", err);
+}
+
+export default AppDataSource;

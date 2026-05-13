@@ -21,6 +21,7 @@ import { CreateFieldSlotDto } from "./dto/create-field-slot.dto";
 import { FieldSlotGenerator } from "./cron/field-slot-generator";
 import { FieldSlotSyncService } from "./cron/field-slot-sync.service";
 import { FieldRuleBook } from "./entities/field-rule-book.entity";
+import { FieldRuleBookHistory } from "./entities/field-rule-book-history.entity";
 import { Field } from "./entities/field.entity";
 import { FieldScheduleSettings } from "./entities/field-schedule-settings.entity";
 import { FieldSlot } from "./entities/field-slot.entity";
@@ -789,7 +790,6 @@ export class FieldsService {
     return await this.fieldSettingRepository
       .createQueryBuilder("setting")
       .leftJoinAndSelect("setting.field", "field")
-      .leftJoinAndSelect("field.scheduleSettings", "scheduleSettings") // optional if needed
       .where("field.owner_id = :ownerId", { ownerId: account.id })
       .getMany();
   }
@@ -921,7 +921,9 @@ export class FieldsService {
       actionType: normalizedRuleBook.actionType,
       value: normalizedRuleBook.value,
       ruleConfig: normalizedRuleBook.ruleConfig,
-      isActive: normalizedRuleBook.isActive,
+      effectiveDate:
+        createFieldRuleBookDto.effectiveDate ??
+        FieldSlotGenerator.getCurrentDateString(),
     });
 
     let savedRuleBook: FieldRuleBook;
@@ -1006,19 +1008,78 @@ export class FieldsService {
       existingRuleBook.isActive,
       field.scheduleSettings.slotDurationMin,
     );
+    const appliedEffectiveDate =
+      createFieldRuleBookDto.effectiveDate ??
+      FieldSlotGenerator.getCurrentDateString();
 
-    existingRuleBook.ruleName = normalizedRuleBook.ruleName;
-    existingRuleBook.slotSelectionType = normalizedRuleBook.slotSelectionType;
-    existingRuleBook.actionType = normalizedRuleBook.actionType;
-    existingRuleBook.value = normalizedRuleBook.value;
-    existingRuleBook.ruleConfig = normalizedRuleBook.ruleConfig;
-    existingRuleBook.isActive = normalizedRuleBook.isActive;
+    const previousEffectiveDate =
+      existingRuleBook.effectiveDate ??
+      existingRuleBook.createdAt.toISOString().split("T")[0];
 
-    let savedRuleBook: FieldRuleBook;
+    if (appliedEffectiveDate < previousEffectiveDate) {
+      throw new BadRequestException(
+        "effectiveDate cannot be earlier than the current rule effective date",
+      );
+    }
 
     try {
-      savedRuleBook =
-        await this.fieldRuleBooksRepository.save(existingRuleBook);
+      const savedRuleBook =
+        await this.fieldRuleBooksRepository.manager.transaction(
+          async (manager) => {
+            const ruleBookRepo = manager.getRepository(FieldRuleBook);
+            const historyRepo = manager.getRepository(FieldRuleBookHistory);
+
+            await historyRepo.upsert(
+              {
+                ruleBookId: existingRuleBook.id,
+                effectiveFromDate: previousEffectiveDate,
+                ruleName: existingRuleBook.ruleName,
+                slotSelectionType: existingRuleBook.slotSelectionType,
+                actionType: existingRuleBook.actionType,
+                value: existingRuleBook.value,
+                ruleConfig: existingRuleBook.ruleConfig as any,
+                isActive: existingRuleBook.isActive,
+              },
+              ["ruleBookId", "effectiveFromDate"],
+            );
+
+            existingRuleBook.ruleName = normalizedRuleBook.ruleName;
+            existingRuleBook.slotSelectionType =
+              normalizedRuleBook.slotSelectionType;
+            existingRuleBook.actionType = normalizedRuleBook.actionType;
+            existingRuleBook.value = normalizedRuleBook.value;
+            existingRuleBook.ruleConfig = normalizedRuleBook.ruleConfig;
+            existingRuleBook.isActive = normalizedRuleBook.isActive;
+            existingRuleBook.effectiveDate = appliedEffectiveDate;
+
+            return ruleBookRepo.save(existingRuleBook);
+          },
+        );
+
+      try {
+        await this.fieldSlotSyncService.syncFieldWindow(
+          fieldId,
+          0,
+          this.initialSlotWindowDays,
+        );
+
+        return {
+          ruleBook: savedRuleBook,
+          slotsUpdated: true,
+        };
+      } catch (error) {
+        this.logger.error(
+          `Failed to sync slots after updating rule book id=${ruleBookId} for fieldId=${fieldId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+
+        return {
+          ruleBook: savedRuleBook,
+          slotsUpdated: false,
+          message:
+            "Rule book updated successfully, but slot synchronization failed. Please retry slot sync.",
+        };
+      }
     } catch (error) {
       this.logger.error(
         `Failed to update rule book id=${ruleBookId} for fieldId=${fieldId}`,
@@ -1032,31 +1093,6 @@ export class FieldsService {
       }
 
       throw error;
-    }
-
-    try {
-      await this.fieldSlotSyncService.syncFieldWindow(
-        fieldId,
-        0,
-        this.initialSlotWindowDays,
-      );
-
-      return {
-        ruleBook: savedRuleBook,
-        slotsUpdated: true,
-      };
-    } catch (error) {
-      this.logger.error(
-        `Failed to sync slots after updating rule book id=${ruleBookId} for fieldId=${fieldId}`,
-        error instanceof Error ? error.stack : String(error),
-      );
-
-      return {
-        ruleBook: savedRuleBook,
-        slotsUpdated: false,
-        message:
-          "Rule book updated successfully, but slot synchronization failed. Please retry slot sync.",
-      };
     }
   }
   async getRuleBooksByAdmin(account: AuthenticatedAccount) {

@@ -13,6 +13,7 @@ import { FieldRuleBook } from "./fields/entities/field-rule-book.entity";
 import { Field } from "./fields/entities/field.entity";
 import { FieldScheduleSettings } from "./fields/entities/field-schedule-settings.entity";
 import { FieldSlot } from "./fields/entities/field-slot.entity";
+import { FieldRuleBookHistory } from "./fields/entities/field-rule-book-history.entity";
 import { FieldsModule } from "./fields/fields.module";
 import { KeepAliveModule } from "./keep-alive/keep-alive.module";
 import { AppController } from "./app.controller";
@@ -127,6 +128,7 @@ function getDatabaseConfig(configService: ConfigService) {
             Field,
             FieldScheduleSettings,
             FieldRuleBook,
+            FieldRuleBookHistory,
             FieldSlot,
           ],
           autoLoadEntities: true,
