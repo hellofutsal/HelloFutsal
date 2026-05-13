@@ -8,6 +8,21 @@ import { Field } from "../entities/field.entity";
 import { FieldSlot } from "../entities/field-slot.entity";
 import { FieldSlotGenerator } from "./field-slot-generator";
 
+type RuleBookVersion = Pick<
+  FieldRuleBook,
+  | "id"
+  | "ruleName"
+  | "slotSelectionType"
+  | "actionType"
+  | "value"
+  | "ruleConfig"
+  | "isActive"
+  | "createdAt"
+  | "updatedAt"
+> & {
+  effectiveDate: string;
+};
+
 @Injectable()
 export class FieldSlotSyncService {
   private readonly logger = new Logger(FieldSlotSyncService.name);
@@ -89,7 +104,8 @@ export class FieldSlotSyncService {
             ),
           );
 
-          // Load applicable history entries for this slotDate and merge overrides
+          // Build the version timeline for each rule book and pick the version
+          // that is effective on this slotDate.
           const historyRepo = manager.getRepository(FieldRuleBookHistory);
           const ruleBookIds = (field.ruleBooks ?? []).map((r) => r.id);
           const histories =
@@ -102,21 +118,11 @@ export class FieldSlotSyncService {
                   .getMany()
               : [];
 
-          const ruleBooksMap = new Map(
-            (field.ruleBooks ?? []).map((r) => [r.id, { ...r }]),
-          );
-          for (const h of histories) {
-            const entry = ruleBooksMap.get(h.ruleBookId);
-            if (entry) {
-              // override config for dates >= effective
-              entry.ruleConfig = h.ruleConfig;
-              entry.isActive = h.isActive;
-            }
-          }
-
-          const activeRuleBooks = Array.from(ruleBooksMap.values()).filter(
-            (rb: any) => rb.isActive,
-          );
+          const activeRuleBooks = this.resolveRuleBooksForDate(
+            field.ruleBooks ?? [],
+            histories,
+            slotDate,
+          ).filter((rb) => rb.isActive);
 
           const specificRules = activeRuleBooks
             .filter(
@@ -423,9 +429,74 @@ export class FieldSlotSyncService {
     return trimmed.length >= 5 ? trimmed.slice(0, 5) : trimmed;
   }
 
+  private resolveRuleBooksForDate(
+    ruleBooks: FieldRuleBook[],
+    histories: FieldRuleBookHistory[],
+    slotDate: string,
+  ): RuleBookVersion[] {
+    const historiesByRuleBookId = new Map<string, FieldRuleBookHistory[]>();
+
+    for (const history of histories) {
+      const bucket = historiesByRuleBookId.get(history.ruleBookId) ?? [];
+      bucket.push(history);
+      historiesByRuleBookId.set(history.ruleBookId, bucket);
+    }
+
+    return ruleBooks
+      .map((ruleBook) => {
+        const versions: RuleBookVersion[] = [];
+        const currentEffectiveDate =
+          ruleBook.effectiveDate ??
+          ruleBook.createdAt.toISOString().split("T")[0];
+
+        if (currentEffectiveDate <= slotDate) {
+          versions.push({
+            id: ruleBook.id,
+            ruleName: ruleBook.ruleName,
+            slotSelectionType: ruleBook.slotSelectionType,
+            actionType: ruleBook.actionType,
+            value: ruleBook.value,
+            ruleConfig: ruleBook.ruleConfig,
+            isActive: ruleBook.isActive,
+            createdAt: ruleBook.createdAt,
+            updatedAt: ruleBook.updatedAt,
+            effectiveDate: currentEffectiveDate,
+          });
+        }
+
+        for (const history of historiesByRuleBookId.get(ruleBook.id) ?? []) {
+          if (history.effectiveFromDate > slotDate) {
+            continue;
+          }
+
+          versions.push({
+            id: history.id,
+            ruleName: history.ruleName,
+            slotSelectionType:
+              history.slotSelectionType as FieldRuleBook["slotSelectionType"],
+            actionType: history.actionType as FieldRuleBook["actionType"],
+            value: history.value,
+            ruleConfig: history.ruleConfig,
+            isActive: history.isActive,
+            createdAt: history.createdAt,
+            updatedAt: history.createdAt,
+            effectiveDate: history.effectiveFromDate,
+          });
+        }
+
+        if (versions.length === 0) {
+          return undefined;
+        }
+
+        versions.sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate));
+        return versions[versions.length - 1];
+      })
+      .filter((ruleBook): ruleBook is RuleBookVersion => Boolean(ruleBook));
+  }
+
   private compareRuleBooks(
-    firstRule: FieldRuleBook,
-    secondRule: FieldRuleBook,
+    firstRule: RuleBookVersion,
+    secondRule: RuleBookVersion,
     _defaultPriority: number,
   ): number {
     const createdAtDiff =

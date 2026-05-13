@@ -940,7 +940,9 @@ export class FieldsService {
       actionType: normalizedRuleBook.actionType,
       value: normalizedRuleBook.value,
       ruleConfig: normalizedRuleBook.ruleConfig,
-      isActive: normalizedRuleBook.isActive,
+      effectiveDate:
+        (createFieldRuleBookDto as any)?.effectiveDate ??
+        new Date().toISOString().split("T")[0],
     });
 
     let savedRuleBook: FieldRuleBook;
@@ -1025,79 +1027,72 @@ export class FieldsService {
       existingRuleBook.isActive,
       field.scheduleSettings.slotDurationMin,
     );
-    // Detect schedule-related changes (activeDays/timeRange/specificSlots)
-    const oldConfig = existingRuleBook.ruleConfig || {};
-    const newConfig = normalizedRuleBook.ruleConfig || {};
-
-    const scheduleKeys = ["allSlots", "timeRange", "specificSlots"];
-    const scheduleChanged = scheduleKeys.some((k) => {
-      const a = JSON.stringify((oldConfig as any)[k] ?? null);
-      const b = JSON.stringify((newConfig as any)[k] ?? null);
-      return a !== b;
-    });
-
     const effectiveDate = (createFieldRuleBookDto as any)?.effectiveDate;
+    const todayString = new Date().toISOString().split("T")[0];
+    const appliedEffectiveDate = effectiveDate ?? todayString;
 
-    if (scheduleChanged) {
-      if (!effectiveDate) {
-        throw new BadRequestException(
-          "Editing activeDays/timeRange/specificSlots requires an effectiveDate to schedule the change",
-        );
-      }
-
-      // schedule a history entry (do not apply now if effective > today)
-      const todayString = new Date().toISOString().split("T")[0];
-      const historyRepo =
-        this.fieldRuleBooksRepository.manager.getRepository(
-          FieldRuleBookHistory,
-        );
-
-      const history = historyRepo.create({
-        ruleBookId: existingRuleBook.id,
-        effectiveFromDate: effectiveDate,
-        ruleConfig: newConfig,
-        isActive: normalizedRuleBook.isActive,
-      });
-
-      try {
-        await historyRepo.save(history);
-      } catch (error) {
-        this.logger.error("Failed to create rule-book history", error);
-        throw error;
-      }
-
-      // If effectiveDate is today or earlier, apply immediately as well
-      if (effectiveDate <= todayString) {
-        existingRuleBook.ruleName = normalizedRuleBook.ruleName;
-        existingRuleBook.slotSelectionType =
-          normalizedRuleBook.slotSelectionType;
-        existingRuleBook.actionType = normalizedRuleBook.actionType;
-        existingRuleBook.value = normalizedRuleBook.value;
-        existingRuleBook.ruleConfig = normalizedRuleBook.ruleConfig;
-        existingRuleBook.isActive = normalizedRuleBook.isActive;
-      } else {
-        // scheduled: return without triggering immediate sync
-        return {
-          ruleBook: existingRuleBook,
-          scheduled: true,
-          effectiveDate,
-        };
-      }
-    } else {
-      // Non-schedule changes: apply immediately
-      existingRuleBook.ruleName = normalizedRuleBook.ruleName;
-      existingRuleBook.slotSelectionType = normalizedRuleBook.slotSelectionType;
-      existingRuleBook.actionType = normalizedRuleBook.actionType;
-      existingRuleBook.value = normalizedRuleBook.value;
-      existingRuleBook.ruleConfig = normalizedRuleBook.ruleConfig;
-      existingRuleBook.isActive = normalizedRuleBook.isActive;
-    }
-
-    let savedRuleBook: FieldRuleBook;
+    const previousEffectiveDate =
+      existingRuleBook.effectiveDate ??
+      existingRuleBook.createdAt.toISOString().split("T")[0];
 
     try {
-      savedRuleBook =
-        await this.fieldRuleBooksRepository.save(existingRuleBook);
+      const savedRuleBook =
+        await this.fieldRuleBooksRepository.manager.transaction(
+          async (manager) => {
+            const ruleBookRepo = manager.getRepository(FieldRuleBook);
+            const historyRepo = manager.getRepository(FieldRuleBookHistory);
+
+            await historyRepo.upsert(
+              {
+                ruleBookId: existingRuleBook.id,
+                effectiveFromDate: previousEffectiveDate,
+                ruleName: existingRuleBook.ruleName,
+                slotSelectionType: existingRuleBook.slotSelectionType,
+                actionType: existingRuleBook.actionType,
+                value: existingRuleBook.value,
+                ruleConfig: existingRuleBook.ruleConfig as any,
+                isActive: existingRuleBook.isActive,
+              },
+              ["ruleBookId", "effectiveFromDate"],
+            );
+
+            existingRuleBook.ruleName = normalizedRuleBook.ruleName;
+            existingRuleBook.slotSelectionType =
+              normalizedRuleBook.slotSelectionType;
+            existingRuleBook.actionType = normalizedRuleBook.actionType;
+            existingRuleBook.value = normalizedRuleBook.value;
+            existingRuleBook.ruleConfig = normalizedRuleBook.ruleConfig;
+            existingRuleBook.isActive = normalizedRuleBook.isActive;
+            existingRuleBook.effectiveDate = appliedEffectiveDate;
+
+            return ruleBookRepo.save(existingRuleBook);
+          },
+        );
+
+      try {
+        await this.fieldSlotSyncService.syncFieldWindow(
+          fieldId,
+          0,
+          this.initialSlotWindowDays,
+        );
+
+        return {
+          ruleBook: savedRuleBook,
+          slotsUpdated: true,
+        };
+      } catch (error) {
+        this.logger.error(
+          `Failed to sync slots after updating rule book id=${ruleBookId} for fieldId=${fieldId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+
+        return {
+          ruleBook: savedRuleBook,
+          slotsUpdated: false,
+          message:
+            "Rule book updated successfully, but slot synchronization failed. Please retry slot sync.",
+        };
+      }
     } catch (error) {
       this.logger.error(
         `Failed to update rule book id=${ruleBookId} for fieldId=${fieldId}`,
@@ -1111,31 +1106,6 @@ export class FieldsService {
       }
 
       throw error;
-    }
-
-    try {
-      await this.fieldSlotSyncService.syncFieldWindow(
-        fieldId,
-        0,
-        this.initialSlotWindowDays,
-      );
-
-      return {
-        ruleBook: savedRuleBook,
-        slotsUpdated: true,
-      };
-    } catch (error) {
-      this.logger.error(
-        `Failed to sync slots after updating rule book id=${ruleBookId} for fieldId=${fieldId}`,
-        error instanceof Error ? error.stack : String(error),
-      );
-
-      return {
-        ruleBook: savedRuleBook,
-        slotsUpdated: false,
-        message:
-          "Rule book updated successfully, but slot synchronization failed. Please retry slot sync.",
-      };
     }
   }
   async getRuleBooksByAdmin(account: AuthenticatedAccount) {

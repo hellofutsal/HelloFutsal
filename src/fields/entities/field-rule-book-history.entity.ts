@@ -25,6 +25,18 @@ export class FieldRuleBookHistory {
   @Column({ name: "effective_from_date", type: "date" })
   effectiveFromDate!: string; // YYYY-MM-DD
 
+  @Column({ name: "rule_name", type: "varchar" })
+  ruleName!: string;
+
+  @Column({ name: "slot_selection_type", type: "varchar" })
+  slotSelectionType!: string;
+
+  @Column({ name: "action_type", type: "varchar" })
+  actionType!: string;
+
+  @Column({ name: "value", type: "numeric", precision: 12, scale: 2 })
+  value!: string;
+
   @Column({ name: "rule_config", type: "jsonb" })
   ruleConfig!: Record<string, unknown>;
 
