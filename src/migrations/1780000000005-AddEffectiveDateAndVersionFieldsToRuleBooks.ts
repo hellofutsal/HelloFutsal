@@ -3,14 +3,9 @@ import { MigrationInterface, QueryRunner, TableColumn } from "typeorm";
 export class AddEffectiveDateAndVersionFieldsToRuleBooks1780000000005 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     const ruleBooksTable = await queryRunner.getTable("field_rule_books");
-    if (!ruleBooksTable?.findColumnByName("effective_date")) {
-      await queryRunner.addColumn(
-        "field_rule_books",
-        new TableColumn({
-          name: "effective_date",
-          type: "date",
-          isNullable: true,
-        }),
+    if (ruleBooksTable?.findColumnByName("effective_date")) {
+      throw new Error(
+        "Migration target column field_rule_books.effective_date already exists",
       );
     }
 
@@ -41,12 +36,27 @@ export class AddEffectiveDateAndVersionFieldsToRuleBooks1780000000005 implements
     ] as const;
 
     for (const column of historyColumns) {
-      if (!historyTable?.findColumnByName(column.name)) {
-        await queryRunner.addColumn(
-          "field_rule_book_history",
-          new TableColumn(column),
+      if (historyTable?.findColumnByName(column.name)) {
+        throw new Error(
+          `Migration target column field_rule_book_history.${column.name} already exists`,
         );
       }
+    }
+
+    await queryRunner.addColumn(
+      "field_rule_books",
+      new TableColumn({
+        name: "effective_date",
+        type: "date",
+        isNullable: true,
+      }),
+    );
+
+    for (const column of historyColumns) {
+      await queryRunner.addColumn(
+        "field_rule_book_history",
+        new TableColumn(column),
+      );
     }
 
     await queryRunner.query(`
