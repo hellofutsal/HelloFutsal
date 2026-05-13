@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Post,
   Get,
   Patch,
@@ -465,6 +466,22 @@ export class MembershipPlanController {
     if (hasBasicPlanUpdate) {
       return this.performMembershipDetailUpdate(membershipId, dto, currentUser);
     }
+  }
+
+  @Delete(":id")
+  @UseGuards(JwtAuthGuard)
+  async deleteMembershipPlan(
+    @Param("id", new ParseUUIDPipe()) membershipId: string,
+    @CurrentAccount() currentUser: AuthenticatedAccount,
+  ) {
+    if (currentUser.role !== "admin") {
+      throw new ForbiddenException("Only admins can delete membership plans");
+    }
+
+    const today = DateTime.now()
+      .setZone("Asia/Kathmandu")
+      .toFormat("yyyy-MM-dd");
+    return this.performMembershipCancellation(membershipId, today, currentUser);
   }
 
   /**

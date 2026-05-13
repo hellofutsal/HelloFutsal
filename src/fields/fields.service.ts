@@ -1114,6 +1114,87 @@ export class FieldsService {
       throw error;
     }
   }
+
+  async deleteField(account: AuthenticatedAccount, fieldId: string) {
+    this.ensureAdmin(account);
+
+    const field = await this.fieldsRepository.findOne({
+      where: { id: fieldId, ownerId: account.id, isActive: true },
+    });
+
+    if (!field) {
+      throw new NotFoundException("Field not found");
+    }
+
+    const activeFieldCount = await this.fieldsRepository.count({
+      where: { ownerId: account.id, isActive: true },
+    });
+
+    if (activeFieldCount <= 1) {
+      throw new BadRequestException(
+        "At least one active field must remain before deleting a field",
+      );
+    }
+
+    await this.fieldsRepository.manager.transaction(async (manager) => {
+      await manager
+        .getRepository(Field)
+        .update({ id: fieldId }, { isActive: false });
+
+      await manager
+        .getRepository(FieldRuleBook)
+        .createQueryBuilder()
+        .update(FieldRuleBook)
+        .set({ isActive: false })
+        .where("field_id = :fieldId", { fieldId })
+        .execute();
+
+      await manager
+        .getRepository(MembershipPlan)
+        .createQueryBuilder()
+        .update(MembershipPlan)
+        .set({
+          active: false,
+          endDate: FieldSlotGenerator.getCurrentDateString(),
+        })
+        .where("field_id = :fieldId", { fieldId })
+        .execute();
+    });
+
+    return {
+      success: true,
+      fieldId,
+      message: "Field deleted successfully",
+    };
+  }
+
+  async deleteRuleBook(
+    account: AuthenticatedAccount,
+    fieldId: string,
+    ruleBookId: string,
+  ) {
+    this.ensureAdmin(account);
+
+    const ruleBook = await this.fieldRuleBooksRepository.findOne({
+      where: { id: ruleBookId, fieldId },
+      relations: { field: true },
+    });
+
+    if (!ruleBook || ruleBook.field.ownerId !== account.id) {
+      throw new NotFoundException("Rule book not found");
+    }
+
+    await this.fieldRuleBooksRepository.update(ruleBook.id, {
+      isActive: false,
+    });
+
+    return {
+      success: true,
+      ruleBookId,
+      message: "Rule book deleted successfully",
+    };
+  }
+
   async getRuleBooksByAdmin(account: AuthenticatedAccount) {
     this.ensureAdmin(account);
     // Get all rule books for all fields owned by this admin
