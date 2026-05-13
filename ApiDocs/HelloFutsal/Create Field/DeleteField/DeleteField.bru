@@ -1,0 +1,31 @@
+meta {
+  name: DeleteField
+  type: http
+  seq: 9
+}
+
+delete {
+  url: {{development}}/fields/{{fieldId}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  ~Authorization: Bearer $TOKEN
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  # Delete Field
+
+  Soft-deletes a field and deactivates its related rule books and membership plans.
+
+  ## Requirements
+
+  - Only admins can delete fields
+  - At least one active field must remain for the owner
+  - Use a valid `fieldId`
+}

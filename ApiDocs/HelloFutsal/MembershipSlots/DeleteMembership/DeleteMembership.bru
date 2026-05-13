@@ -1,0 +1,36 @@
+meta {
+  name: DeleteMembership
+  type: http
+  seq: 41
+}
+
+delete {
+  url: {{development}}/membership-plans/{{membershipId}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  ~Authorization: Bearer $TOKEN
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  # Delete Membership Plan
+
+  Deletes a membership plan by cancelling it immediately.
+
+  ## Behavior
+
+  - Marks the membership as inactive
+  - Sets the end date to today
+  - Releases future booked membership slots tied to the plan
+
+  ## Requirements
+
+  - Only admins can delete membership plans
+  - Use a valid `membershipId`
+}

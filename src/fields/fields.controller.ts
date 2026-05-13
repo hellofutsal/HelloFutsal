@@ -8,6 +8,7 @@ import {
   ParseArrayPipe,
   ParseUUIDPipe,
   Post,
+  Delete,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -197,6 +198,25 @@ export class FieldsController {
       ruleBookId,
       dto,
     );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(":fieldId")
+  deleteField(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+  ) {
+    return this.fieldsService.deleteField(account, fieldId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(":fieldId/rule-books/:ruleBookId")
+  deleteRuleBook(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Param("ruleBookId", new ParseUUIDPipe()) ruleBookId: string,
+  ) {
+    return this.fieldsService.deleteRuleBook(account, fieldId, ruleBookId);
   }
 
   @UseGuards(JwtAuthGuard)

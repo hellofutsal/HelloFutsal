@@ -1,0 +1,30 @@
+meta {
+  name: DeleteRuleBook
+  type: http
+  seq: 12
+}
+
+delete {
+  url: {{development}}/fields/{{fieldId}}/rule-books/{{ruleBookId}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  ~Authorization: Bearer $TOKEN
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  # Delete Rule Book
+
+  Soft-deletes a field rule book by marking it inactive.
+
+  ## Requirements
+
+  - The field must belong to the authenticated admin
+  - Use valid `fieldId` and `ruleBookId`
+}
