@@ -9,6 +9,7 @@ import { FieldScheduleSettings } from "./fields/entities/field-schedule-settings
 import { FieldSlot } from "./fields/entities/field-slot.entity";
 import { MembershipPlan } from "./booking/entities/membership-plan.entity";
 import { Booking } from "./booking/entities/booking.entity";
+import { CancelledBooking } from "./booking/entities/cancelled-booking.entity";
 import { join } from "path";
 
 function resolveSslConfig(sslMode: string) {
@@ -79,6 +80,7 @@ const AppDataSource = new DataSource({
     FieldSlot,
     MembershipPlan,
     Booking,
+    CancelledBooking,
   ],
   migrations: [join(__dirname, "migrations", "*{.ts,.js}")],
 });

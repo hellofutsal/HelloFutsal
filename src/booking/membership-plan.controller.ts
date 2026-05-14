@@ -34,6 +34,7 @@ import { Field } from "../fields/entities/field.entity";
 import { FieldSlot } from "../fields/entities/field-slot.entity";
 import { FieldsService } from "../fields/fields.service";
 import { Booking } from "./entities/booking.entity";
+import { CancelledBooking } from "./entities/cancelled-booking.entity";
 import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
@@ -52,6 +53,8 @@ export class MembershipPlanController {
     private readonly fieldSlotRepo: Repository<FieldSlot>,
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
+    @InjectRepository(CancelledBooking)
+    private readonly cancelledBookingRepo: Repository<CancelledBooking>,
     @InjectRepository(MembershipPricingHistory)
     private readonly pricingHistoryRepo: Repository<MembershipPricingHistory>,
     private readonly fieldsService: FieldsService,
@@ -533,8 +536,27 @@ export class MembershipPlanController {
         .getMany();
 
       for (const booking of membershipBookings) {
-        booking.status = "cancelled";
-        await bookingRepo.save(booking);
+        // move booking to cancelled_bookings and delete original
+        const cancelledRepo = manager.getRepository(CancelledBooking);
+
+        await cancelledRepo.save(
+          cancelledRepo.create({
+            originalBookingId: booking.id,
+            fieldId: booking.fieldId,
+            slotId: booking.slotId,
+            userId: booking.userId,
+            bookingType: booking.bookingType,
+            baseAmount: booking.baseAmount,
+            totalAmount: booking.totalAmount,
+            discount: booking.discount,
+            extraAmount: booking.extraAmount,
+            discountAmount: booking.discountAmount,
+            createdAt: booking.createdAt,
+            cancelledBy: currentUser.id,
+          }),
+        );
+
+        await bookingRepo.delete({ id: booking.id });
 
         booking.slot.status = "available";
         booking.slot.slotType = "normal";
@@ -805,8 +827,24 @@ export class MembershipPlanController {
 
           for (const booking of bookingsToRelease) {
             if (booking.status === "booked") {
-              booking.status = "cancelled";
-              await bookingRepo.save(booking);
+              await this.cancelledBookingRepo.save(
+                this.cancelledBookingRepo.create({
+                  originalBookingId: booking.id,
+                  fieldId: booking.fieldId,
+                  slotId: booking.slotId,
+                  userId: booking.userId,
+                  bookingType: booking.bookingType,
+                  baseAmount: booking.baseAmount,
+                  totalAmount: booking.totalAmount,
+                  discount: booking.discount,
+                  extraAmount: booking.extraAmount,
+                  discountAmount: booking.discountAmount,
+                  createdAt: booking.createdAt,
+                  cancelledBy: currentUser.id,
+                }),
+              );
+
+              await bookingRepo.delete({ id: booking.id });
               cancelledCount++;
             }
 
