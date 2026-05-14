@@ -275,15 +275,39 @@ export class MembershipPlanController {
       lockedSlot.membershipPlanId = membershipPlanId;
       await manager.save(FieldSlot, lockedSlot);
 
-      const booking = manager.create(Booking, {
-        fieldId: field.id,
-        slotId: lockedSlot.id,
-        userId,
-        status: "booked",
-        totalAmount: "0",
-        bookingType: "membership",
-      });
-      await manager.save(Booking, booking);
+      const existingBooking = await manager
+        .getRepository(Booking)
+        .createQueryBuilder("booking")
+        .where("booking.slot_id = :slotId", { slotId: lockedSlot.id })
+        .setLock("pessimistic_write")
+        .getOne();
+
+      if (existingBooking) {
+        existingBooking.fieldId = field.id;
+        existingBooking.userId = userId;
+        existingBooking.status = "booked";
+        existingBooking.bookingType = "membership";
+        existingBooking.discount = false;
+        existingBooking.baseAmount = "0";
+        existingBooking.totalAmount = "0";
+        existingBooking.extraAmount = "0";
+        existingBooking.discountAmount = "0";
+        await manager.save(Booking, existingBooking);
+      } else {
+        const booking = manager.create(Booking, {
+          fieldId: field.id,
+          slotId: lockedSlot.id,
+          userId,
+          status: "booked",
+          baseAmount: "0",
+          totalAmount: "0",
+          extraAmount: "0",
+          discountAmount: "0",
+          bookingType: "membership",
+          discount: false,
+        });
+        await manager.save(Booking, booking);
+      }
       syncedCount++;
     }
 
