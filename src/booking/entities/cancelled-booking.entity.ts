@@ -1,6 +1,5 @@
 import {
   Column,
-  CreateDateColumn,
   Entity,
   JoinColumn,
   ManyToOne,
@@ -18,26 +17,26 @@ export class CancelledBooking {
   @Column({ name: "original_booking_id", type: "uuid", nullable: true })
   originalBookingId?: string;
 
-  @Column({ name: "field_id", type: "uuid" })
-  fieldId!: string;
+  @Column({ name: "field_id", type: "uuid", nullable: true })
+  fieldId!: string | null;
 
-  @ManyToOne(() => Field, { onDelete: "CASCADE" })
+  @ManyToOne(() => Field, { onDelete: "SET NULL" })
   @JoinColumn({ name: "field_id" })
-  field!: Field;
+  field?: Field | null;
 
-  @Column({ name: "slot_id", type: "uuid" })
-  slotId!: string;
+  @Column({ name: "slot_id", type: "uuid", nullable: true })
+  slotId!: string | null;
 
-  @ManyToOne(() => FieldSlot, { onDelete: "CASCADE" })
+  @ManyToOne(() => FieldSlot, { onDelete: "SET NULL" })
   @JoinColumn({ name: "slot_id" })
-  slot!: FieldSlot;
+  slot?: FieldSlot | null;
 
-  @Column({ name: "user_id", type: "uuid" })
-  userId!: string;
+  @Column({ name: "user_id", type: "uuid", nullable: true })
+  userId!: string | null;
 
-  @ManyToOne(() => UserAccount, { onDelete: "CASCADE" })
+  @ManyToOne(() => UserAccount, { onDelete: "SET NULL" })
   @JoinColumn({ name: "user_id" })
-  user!: UserAccount;
+  user?: UserAccount | null;
 
   @Column({ name: "booking_type", type: "varchar", nullable: true })
   bookingType?: string;
@@ -81,7 +80,7 @@ export class CancelledBooking {
   })
   discountAmount!: string;
 
-  @CreateDateColumn({ name: "created_at" })
+  @Column({ name: "created_at", type: "timestamp" })
   createdAt!: Date;
 
   @Column({ name: "cancelled_at", type: "timestamptz", default: () => "now()" })
