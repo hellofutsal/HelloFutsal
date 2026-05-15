@@ -11,6 +11,7 @@ import { GroundOwnerAccount } from "../auth/entities/ground-owner.entity";
 import { UserAccount } from "../auth/entities/user.entity";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { Booking } from "./entities/booking.entity";
+import { CancelledBooking } from "./entities/cancelled-booking.entity";
 import { MembershipPlan } from "./entities/membership-plan.entity";
 import { Field } from "../fields/entities/field.entity";
 import { FieldSlot } from "../fields/entities/field-slot.entity";
@@ -25,6 +26,8 @@ export class BookingService {
   constructor(
     @InjectRepository(Booking)
     private readonly bookingsRepository: Repository<Booking>,
+    @InjectRepository(CancelledBooking)
+    private readonly cancelledBookingsRepository: Repository<CancelledBooking>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
     @InjectRepository(UserAccount)
@@ -144,8 +147,25 @@ export class BookingService {
           }
           // ---------------------------------------------------------------------------
 
-          const booking = await manager.getRepository(Booking).save(
-            manager.getRepository(Booking).create({
+          const bookingRepo = manager.getRepository(Booking);
+
+          // Ensure there's no active booking for this slot (status <> 'cancelled').
+          const activeBooking = await bookingRepo
+            .createQueryBuilder("booking")
+            .where("booking.slot_id = :slotId", { slotId: slot.id })
+            .andWhere("booking.status <> :cancelled", {
+              cancelled: "cancelled",
+            })
+            .setLock("pessimistic_write")
+            .getOne();
+
+          if (activeBooking) {
+            throw new ConflictException("Slot already has an active booking");
+          }
+
+          // Create a new booking row (preserve cancelled history rows separately).
+          const booking = await bookingRepo.save(
+            bookingRepo.create({
               fieldId: slot.fieldId,
               slotId: slot.id,
               userId: user.id,
@@ -536,8 +556,27 @@ export class BookingService {
         throw new NotFoundException("Slot not found");
       }
 
-      booking.status = "cancelled";
-      await bookingRepository.save(booking);
+      // Archive cancelled booking into `cancelled_bookings` and remove original
+      const cancelledRepo = manager.getRepository(CancelledBooking);
+
+      await cancelledRepo.save(
+        cancelledRepo.create({
+          originalBookingId: booking.id,
+          fieldId: booking.fieldId,
+          slotId: booking.slotId,
+          userId: booking.userId,
+          bookingType: booking.bookingType,
+          baseAmount: booking.baseAmount,
+          totalAmount: booking.totalAmount,
+          discount: booking.discount,
+          extraAmount: booking.extraAmount,
+          discountAmount: booking.discountAmount,
+          createdAt: booking.createdAt,
+          cancelledBy: account.id,
+        }),
+      );
+
+      await bookingRepository.delete({ id: booking.id });
 
       slot.status = "available";
       slot.slotType = "normal";
@@ -867,6 +906,27 @@ export class BookingService {
                 bookingType = "membership";
               }
 
+              // Ensure there's no active booking for this slot (status <> 'cancelled').
+              const activeBooking = await bookingRepository
+                .createQueryBuilder("booking")
+                .where("booking.slot_id = :slotId", { slotId: lockedSlot.id })
+                .andWhere("booking.status <> :cancelled", {
+                  cancelled: "cancelled",
+                })
+                .setLock("pessimistic_write")
+                .getOne();
+
+              if (activeBooking) {
+                failedBookings.push({
+                  slotDate: slot.slotDate,
+                  startTime: slot.startTime,
+                  endTime: slot.endTime,
+                  error: "Slot already booked",
+                });
+                continue;
+              }
+
+              // Create a new booking row (preserve cancelled history rows separately).
               const booking = await bookingRepository.save(
                 bookingRepository.create({
                   fieldId: slot.fieldId,

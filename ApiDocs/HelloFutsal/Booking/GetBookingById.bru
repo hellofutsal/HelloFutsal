@@ -1,7 +1,7 @@
 meta {
   name: GetBookingById
   type: http
-  seq: 14
+  seq: 3
 }
 
 get {
@@ -10,10 +10,10 @@ get {
   auth: bearer
 }
 
-auth:bearer {
-  token: {{token}}
-}
-
 headers {
   Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
 }
