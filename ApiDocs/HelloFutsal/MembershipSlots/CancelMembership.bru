@@ -1,7 +1,7 @@
 meta {
   name: CancelMembership
   type: http
-  seq: 20
+  seq: 4
 }
 
 patch {
@@ -10,12 +10,12 @@ patch {
   auth: bearer
 }
 
-auth:bearer {
-  token: {{token}}
-}
-
 headers {
   Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
 }
 
 body:json {
