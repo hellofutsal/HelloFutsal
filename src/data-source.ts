@@ -10,6 +10,8 @@ import { FieldSlot } from "./fields/entities/field-slot.entity";
 import { MembershipPlan } from "./booking/entities/membership-plan.entity";
 import { Booking } from "./booking/entities/booking.entity";
 import { CancelledBooking } from "./booking/entities/cancelled-booking.entity";
+import { TournamentBooking } from "./tournament/entities/tournament-booking.entity";
+import { TournamentPayment } from "./tournament/entities/tournament-payment.entity";
 import { join } from "path";
 
 function resolveSslConfig(sslMode: string) {
@@ -77,6 +79,8 @@ const AppDataSource = new DataSource({
     // history entity
     require("./fields/entities/field-rule-book-history.entity")
       .FieldRuleBookHistory,
+    TournamentBooking,
+    TournamentPayment,
     FieldSlot,
     MembershipPlan,
     Booking,

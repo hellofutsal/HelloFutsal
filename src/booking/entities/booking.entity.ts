@@ -13,7 +13,7 @@ import { Field } from "../../fields/entities/field.entity";
 import { FieldSlot } from "../../fields/entities/field-slot.entity";
 
 export type BookingStatus = "booked" | "completed" | "cancelled";
-export type BookingType = "normal" | "membership";
+export type BookingType = "normal" | "membership" | "tournament";
 
 @Entity({ name: "bookings" })
 @Index(["fieldId"])

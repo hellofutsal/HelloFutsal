@@ -1,0 +1,18 @@
+meta {
+  name: ListTournaments
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{development}}/tournaments
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}

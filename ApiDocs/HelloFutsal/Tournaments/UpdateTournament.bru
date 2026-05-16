@@ -1,0 +1,26 @@
+meta {
+  name: UpdateTournament
+  type: http
+  seq: 1
+}
+
+put {
+  url: {{development}}/tournaments/{{tournamentId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "eventName": "Inter College Cup - Updated",
+    "notes": "Updated notes"
+  }
+}
