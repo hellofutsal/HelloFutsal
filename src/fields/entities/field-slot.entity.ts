@@ -58,6 +58,15 @@ export class FieldSlot {
   @Column({ name: "price", type: "numeric", precision: 12, scale: 2 })
   price!: string;
 
+  @Column({
+    name: "previous_price",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    nullable: true,
+  })
+  previousPrice!: string | null;
+
   @Column({ name: "status", type: "varchar", default: "available" })
   status!: FieldSlotStatus;
 

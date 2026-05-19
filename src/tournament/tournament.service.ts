@@ -12,6 +12,8 @@ import { TournamentPayment } from "./entities/tournament-payment.entity";
 import { CreateTournamentBookingDto } from "./dto/create-tournament-booking.dto";
 import { UpdateTournamentBookingDto } from "./dto/update-tournament-booking.dto";
 import { FieldSlot } from "../fields/entities/field-slot.entity";
+import { Field } from "../fields/entities/field.entity";
+import { FieldRuleBookHistory } from "../fields/entities/field-rule-book-history.entity";
 import { FieldSlotGenerator } from "../fields/cron/field-slot-generator";
 import { UserAccount } from "../auth/entities/user.entity";
 import { Booking } from "../booking/entities/booking.entity";
@@ -174,8 +176,10 @@ export class TournamentService {
         // @ts-ignore
         s.tournamentBookingId = saved.id;
 
-        // If tournament provided a total, override the per-slot price to be the
-        // equal share of the tournament total. Otherwise keep the slot's price.
+        // Preserve original price for fast restore, then override the
+        // per-slot price to be the equal share of the tournament total.
+        // @ts-ignore
+        s.previousPrice = s.price;
         s.price = perSlotAmount;
 
         await em.getRepository(FieldSlot).save(s);
@@ -186,12 +190,24 @@ export class TournamentService {
             fieldId: s.fieldId,
             slotId: s.id,
             userId: organizerUser.id,
-            status: "booked",
+            status: "tournament",
             bookingType: "tournament",
             baseAmount: perSlotAmount,
             totalAmount: perSlotAmount,
           }),
         );
+      }
+
+      // Record advance payment as a TournamentPayment if provided
+      if (Number(saved.advancePaid || 0) > 0) {
+        const paymentRepo = em.getRepository(TournamentPayment);
+        const advancePayment = paymentRepo.create({
+          tournamentId: saved.id,
+          amount: saved.advancePaid,
+          method: "cash",
+          note: "Advance payment on tournament creation",
+        });
+        await paymentRepo.save(advancePayment);
       }
 
       return saved;
@@ -399,6 +415,90 @@ export class TournamentService {
     throw new BadRequestException("Invalid time format. Use HH:mm or HH:mm:ss");
   }
 
+  private resolveRuleBooksForDate(
+    ruleBooks: any[],
+    histories: any[],
+    slotDate: string,
+  ) {
+    const historiesByRuleBookId = new Map<string, any[]>();
+
+    for (const history of histories) {
+      const bucket = historiesByRuleBookId.get(history.ruleBookId) ?? [];
+      bucket.push(history);
+      historiesByRuleBookId.set(history.ruleBookId, bucket);
+    }
+
+    return ruleBooks
+      .map((ruleBook) => {
+        const versions: any[] = [];
+        const currentEffectiveDate =
+          ruleBook.effectiveDate ??
+          ruleBook.createdAt.toISOString().split("T")[0];
+
+        for (const history of historiesByRuleBookId.get(ruleBook.id) ?? []) {
+          if (history.effectiveFromDate > slotDate) {
+            continue;
+          }
+
+          versions.push({
+            id: history.id,
+            ruleName: history.ruleName,
+            slotSelectionType: history.slotSelectionType,
+            actionType: history.actionType,
+            value: history.value,
+            ruleConfig: history.ruleConfig,
+            isActive: history.isActive,
+            createdAt: history.createdAt,
+            updatedAt: history.createdAt,
+            effectiveDate: history.effectiveFromDate,
+          });
+        }
+
+        if (currentEffectiveDate <= slotDate) {
+          versions.push({
+            id: ruleBook.id,
+            ruleName: ruleBook.ruleName,
+            slotSelectionType: ruleBook.slotSelectionType,
+            actionType: ruleBook.actionType,
+            value: ruleBook.value,
+            ruleConfig: ruleBook.ruleConfig,
+            isActive: ruleBook.isActive,
+            createdAt: ruleBook.createdAt,
+            updatedAt: ruleBook.updatedAt,
+            effectiveDate: currentEffectiveDate,
+          });
+        }
+
+        if (versions.length === 0) {
+          return undefined;
+        }
+
+        versions.sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate));
+        return versions[versions.length - 1];
+      })
+      .filter((ruleBook) => Boolean(ruleBook));
+  }
+
+  private compareRuleBooks(
+    firstRule: any,
+    secondRule: any,
+    _defaultPriority: number,
+  ) {
+    const createdAtDiff =
+      firstRule.createdAt.getTime() - secondRule.createdAt.getTime();
+    if (createdAtDiff !== 0) {
+      return createdAtDiff;
+    }
+
+    const updatedAtDiff =
+      firstRule.updatedAt.getTime() - secondRule.updatedAt.getTime();
+    if (updatedAtDiff !== 0) {
+      return updatedAtDiff;
+    }
+
+    return firstRule.id.localeCompare(secondRule.id);
+  }
+
   get(id: string) {
     return this.repo.findOne({ where: { id } });
   }
@@ -449,18 +549,139 @@ export class TournamentService {
   }
 
   async cancel(id: string, refund: boolean, refundAmount?: string) {
-    const booking = await this.repo.findOne({ where: { id } });
-    if (!booking) throw new NotFoundException("Tournament booking not found");
+    return this.repo.manager.transaction(async (manager) => {
+      const bookingRepo = manager.getRepository(TournamentBooking);
+      const slotRepo = manager.getRepository(FieldSlot);
+      const bookingRowRepo = manager.getRepository(Booking);
+      const fieldRepo = manager.getRepository(Field);
+      const historyRepo = manager.getRepository(FieldRuleBookHistory);
 
-    booking.status = "cancelled";
-    await this.repo.save(booking);
+      const booking = await bookingRepo
+        .createQueryBuilder("tournament")
+        .setLock("pessimistic_write")
+        .where("tournament.id = :id", { id })
+        .getOne();
 
-    // refund logic could be implemented here; for now, return refund details
-    return {
-      booking,
-      refundGiven: !!refund,
-      refundAmount: refund ? (refundAmount ?? booking.advancePaid) : "0",
-    };
+      if (!booking) throw new NotFoundException("Tournament booking not found");
+
+      booking.status = "cancelled";
+
+      const slots = await slotRepo
+        .createQueryBuilder("slot")
+        .setLock("pessimistic_write")
+        .where("slot.tournament_booking_id = :id", { id })
+        .getMany();
+
+      for (const slot of slots) {
+        // fast-path: restore the original slot price if we saved it earlier
+        // @ts-ignore
+        if (slot.previousPrice) {
+          // @ts-ignore
+          slot.price = slot.previousPrice;
+        } else {
+          // otherwise compute price from schedule settings and rule books
+          const field = await fieldRepo.findOne({
+            where: { id: slot.fieldId },
+            relations: { scheduleSettings: true, ruleBooks: true },
+          });
+
+          let resolvedPrice = field?.scheduleSettings?.basePrice ?? slot.price;
+
+          if (field?.ruleBooks && field.ruleBooks.length > 0) {
+            const ruleBookIds = field.ruleBooks.map((r) => r.id);
+            const histories = await historyRepo
+              .createQueryBuilder("h")
+              .where("h.rule_book_id IN (:...ids)", { ids: ruleBookIds })
+              .andWhere("h.effective_from_date <= :slotDate", {
+                slotDate: slot.slotDate,
+              })
+              .orderBy("h.effective_from_date", "ASC")
+              .getMany();
+
+            const activeRuleBooks = this.resolveRuleBooksForDate(
+              field.ruleBooks ?? [],
+              histories,
+              slot.slotDate,
+            ).filter((rb) => rb.isActive);
+
+            const specificRules = activeRuleBooks
+              .filter(
+                (ruleBook) =>
+                  ruleBook.slotSelectionType === ("SPECIFIC_SLOTS" as any),
+              )
+              .sort((a, b) => this.compareRuleBooks(a, b, 1));
+
+            const timeRangeRules = activeRuleBooks
+              .filter(
+                (ruleBook) =>
+                  ruleBook.slotSelectionType === ("TIME_RANGE" as any),
+              )
+              .sort((a, b) => this.compareRuleBooks(a, b, 2));
+
+            const allSlotRules = activeRuleBooks
+              .filter(
+                (ruleBook) =>
+                  ruleBook.slotSelectionType === ("ALL_SLOTS" as any),
+              )
+              .sort((a, b) => this.compareRuleBooks(a, b, 3));
+
+            const date = new Date(slot.slotDate);
+            const weekdayNames = [
+              "sunday",
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday",
+            ];
+            const slotWeekday = weekdayNames[date.getDay()];
+
+            resolvedPrice = FieldSlotGenerator.resolveSlotPriceFromRules(
+              { startTime: slot.startTime, endTime: slot.endTime },
+              slotWeekday,
+              slot.slotDate,
+              specificRules as any,
+              timeRangeRules as any,
+              allSlotRules as any,
+              field.scheduleSettings?.basePrice ?? slot.price,
+            );
+          }
+
+          slot.price = resolvedPrice;
+        }
+
+        // clear stored previous price and release slot
+        // @ts-ignore
+        slot.previousPrice = null;
+        slot.status = "available" as any;
+        slot.slotType = "normal" as any;
+        slot.tournamentBookingId = null;
+      }
+
+      const relatedBookings = slots.length
+        ? await bookingRowRepo
+            .createQueryBuilder("booking")
+            .innerJoin("booking.slot", "slot")
+            .setLock("pessimistic_write")
+            .where("slot.tournament_booking_id = :id", { id })
+            .getMany()
+        : [];
+
+      for (const relatedBooking of relatedBookings) {
+        relatedBooking.status = "cancelled";
+      }
+
+      await slotRepo.save(slots);
+      await bookingRowRepo.save(relatedBookings);
+      const savedBooking = await bookingRepo.save(booking);
+
+      return {
+        booking: savedBooking,
+        refundGiven: !!refund,
+        refundAmount: refund ? (refundAmount ?? savedBooking.advancePaid) : "0",
+      };
+    });
   }
 
   async markCompleted(id: string, remainingAmount?: string, method?: string) {
