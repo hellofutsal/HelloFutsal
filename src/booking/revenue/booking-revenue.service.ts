@@ -11,6 +11,7 @@ import { AuthenticatedAccount } from "../../auth/types/authenticated-account.typ
 import { Field } from "../../fields/entities/field.entity";
 import { FieldSlot } from "../../fields/entities/field-slot.entity";
 import { Booking } from "../entities/booking.entity";
+import { TournamentBooking } from "../../tournament/entities/tournament-booking.entity";
 import { GetFieldBookingRevenueQueryDto } from "./dto/get-field-booking-revenue-query.dto";
 
 @Injectable()
@@ -25,6 +26,8 @@ export class BookingRevenueService {
     private readonly fieldsRepository: Repository<Field>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
+    @InjectRepository(TournamentBooking)
+    private readonly tournamentBookingsRepository: Repository<TournamentBooking>,
   ) {}
 
   async getFieldRevenue(
@@ -59,6 +62,8 @@ export class BookingRevenueService {
     if (query.startDate && query.endDate && query.endDate < query.startDate) {
       throw new ConflictException("endDate must be on or after startDate");
     }
+
+    const tournamentRevenue = await this.getTournamentRevenue(fieldId);
 
     const baseQuery = this.bookingsRepository
       .createQueryBuilder("booking")
@@ -132,7 +137,8 @@ export class BookingRevenueService {
       (sum, row) => sum + Number(row.count),
       0,
     );
-    const bookedSlots = (slotStatMap["booked"] ?? 0) + (slotStatMap["completed"] ?? 0);
+    const bookedSlots =
+      (slotStatMap["booked"] ?? 0) + (slotStatMap["completed"] ?? 0);
 
     const bookingPercentage =
       totalSlots > 0
@@ -165,6 +171,58 @@ export class BookingRevenueService {
             }
           : null,
       slotStats,
+      tournamentRevenue,
+    };
+  }
+
+  private async getTournamentRevenue(fieldId: string) {
+    const tournamentRows = await this.tournamentBookingsRepository
+      .createQueryBuilder("tournament")
+      .select("tournament.status", "status")
+      .addSelect("tournament.total_amount", "totalAmount")
+      .addSelect("tournament.advance_paid", "advancePaid")
+      .where("tournament.field_id = :fieldId", { fieldId })
+      .getRawMany<{
+        status: string;
+        totalAmount: string;
+        advancePaid: string;
+      }>();
+
+    const activeRows = tournamentRows.filter(
+      (row) => row.status !== "cancelled",
+    );
+
+    const totals = activeRows.reduce(
+      (acc, row) => {
+        const totalAmount = Number(row.totalAmount ?? 0);
+        const advancePaid = Number(row.advancePaid ?? 0);
+        const collectedAmount =
+          row.status === "completed" ? totalAmount : advancePaid;
+
+        acc.totalAmount += Number.isNaN(totalAmount) ? 0 : totalAmount;
+        acc.totalRevenue += Number.isNaN(collectedAmount) ? 0 : collectedAmount;
+        return acc;
+      },
+      { totalAmount: 0, totalRevenue: 0 },
+    );
+
+    return {
+      totalAmountTillNow: totals.totalAmount.toFixed(2),
+      totalRevenueTillNow: totals.totalRevenue.toFixed(2),
+      selectedPeriodAmount: totals.totalAmount.toFixed(2),
+      selectedPeriodRevenue: totals.totalRevenue.toFixed(2),
+      tournamentStats: {
+        totalTournaments: tournamentRows.length,
+        confirmedTournaments: tournamentRows.filter(
+          (row) => row.status === "confirmed",
+        ).length,
+        completedTournaments: tournamentRows.filter(
+          (row) => row.status === "completed",
+        ).length,
+        cancelledTournaments: tournamentRows.filter(
+          (row) => row.status === "cancelled",
+        ).length,
+      },
     };
   }
 

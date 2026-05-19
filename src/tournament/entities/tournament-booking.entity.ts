@@ -5,15 +5,26 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
   Index,
+  ManyToOne,
+  JoinColumn,
 } from "typeorm";
+import { Field } from "../../fields/entities/field.entity";
 
 export type TournamentStatus = "confirmed" | "completed" | "cancelled";
 
 @Entity({ name: "tournament_bookings" })
 @Index(["organizerPhone"])
+@Index(["fieldId"])
 export class TournamentBooking {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
+
+  @Column({ name: "field_id", type: "uuid", nullable: true })
+  fieldId?: string | null;
+
+  @ManyToOne(() => Field, { onDelete: "SET NULL", nullable: true })
+  @JoinColumn({ name: "field_id" })
+  field?: Field | null;
 
   @Column({ name: "organizer_name", type: "varchar" })
   organizerName!: string;

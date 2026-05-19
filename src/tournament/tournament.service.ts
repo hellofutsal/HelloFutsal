@@ -43,6 +43,7 @@ export class TournamentService {
     const window = this.resolveTournamentWindow(dto);
 
     const ent = this.repo.create({
+      fieldId: dto.courts[0] ?? null,
       organizerName: dto.organizerName,
       organizerPhone: dto.organizerPhone,
       eventName: dto.eventName,
@@ -508,6 +509,7 @@ export class TournamentService {
     if (!existing) throw new NotFoundException("Tournament booking not found");
 
     Object.assign(existing, {
+      fieldId: dto.courts?.[0] ?? existing.fieldId ?? null,
       organizerName: dto.organizerName ?? existing.organizerName,
       organizerPhone: dto.organizerPhone ?? existing.organizerPhone,
       eventName: dto.eventName ?? existing.eventName,
