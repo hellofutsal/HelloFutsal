@@ -12,6 +12,7 @@ import { CreateTournamentBookingDto } from "./dto/create-tournament-booking.dto"
 import { CompleteTournamentDto } from "./dto/complete-tournament.dto";
 import { UpdateTournamentBookingDto } from "./dto/update-tournament-booking.dto";
 import { RecordPaymentDto } from "./dto/record-payment.dto";
+import { CancelTournamentDto } from "./dto/cancel-tournament.dto";
 
 @Controller("tournaments")
 export class TournamentController {
@@ -43,10 +44,7 @@ export class TournamentController {
   }
 
   @Post(":id/cancel")
-  cancel(
-    @Param("id") id: string,
-    @Body() body: { refund: boolean; refundAmount?: string },
-  ) {
+  cancel(@Param("id") id: string, @Body() body: CancelTournamentDto) {
     return this.svc.cancel(id, body.refund, body.refundAmount);
   }
 

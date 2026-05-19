@@ -32,6 +32,10 @@ export class AddTournamentBooking1778896536501 implements MigrationInterface {
             ALTER TABLE "field_slots"
             ADD COLUMN IF NOT EXISTS "tournament_booking_id" uuid
         `);
+    await queryRunner.query(`
+        CREATE INDEX IF NOT EXISTS "IDX_field_slots_tournament_booking_id"
+        ON "field_slots" ("tournament_booking_id")
+      `);
 
     const fieldSlotsTable = await queryRunner.getTable("field_slots");
     const tournamentSlotForeignKey = fieldSlotsTable?.foreignKeys.find(
@@ -58,6 +62,10 @@ export class AddTournamentBooking1778896536501 implements MigrationInterface {
                 CONSTRAINT "PK_507e25f1b6b1c1ee9f941898bb2" PRIMARY KEY ("id")
             )
         `);
+    await queryRunner.query(`
+        CREATE INDEX IF NOT EXISTS "IDX_tournament_payments_tournament_id"
+        ON "tournament_payments" ("tournament_id")
+      `);
 
     const tournamentPaymentsTable = await queryRunner.getTable(
       "tournament_payments",

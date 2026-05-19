@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsNumberString,
   IsString,
+  IsUUID,
 } from "class-validator";
 
 export class UpdateTournamentBookingDto {
@@ -29,6 +30,7 @@ export class UpdateTournamentBookingDto {
 
   @IsOptional()
   @IsArray()
+  @IsUUID("4", { each: true })
   courts?: string[];
 
   @IsOptional()

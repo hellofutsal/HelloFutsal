@@ -508,6 +508,13 @@ export class TournamentService {
     const existing = await this.repo.findOne({ where: { id } });
     if (!existing) throw new NotFoundException("Tournament booking not found");
 
+    // Prevent changing schedule/courts via update; require reschedule flow
+    if (dto.startAt || dto.endAt || dto.courts) {
+      throw new BadRequestException(
+        "Rescheduling or changing courts is not supported via update",
+      );
+    }
+
     Object.assign(existing, {
       fieldId: dto.courts?.[0] ?? existing.fieldId ?? null,
       organizerName: dto.organizerName ?? existing.organizerName,
@@ -530,24 +537,40 @@ export class TournamentService {
     method: string,
     note?: string,
   ) {
-    const booking = await this.repo.findOne({ where: { id } });
-    if (!booking) throw new NotFoundException("Tournament booking not found");
+    if (!amount || Number(amount) <= 0) {
+      throw new BadRequestException("invalid amount");
+    }
 
-    const payment = this.paymentRepo.create({
-      tournamentId: id,
-      amount,
-      method: method as any,
-      note,
+    return await this.repo.manager.transaction(async (manager) => {
+      const bookingRepo = manager.getRepository(TournamentBooking);
+      const paymentRepo = manager.getRepository(TournamentPayment);
+
+      // lock the booking row for update
+      const locked = await bookingRepo
+        .createQueryBuilder("tournament")
+        .setLock("pessimistic_write")
+        .where("tournament.id = :id", { id })
+        .getOne();
+
+      if (!locked) throw new NotFoundException("Tournament booking not found");
+
+      const payment = paymentRepo.create({
+        tournamentId: id,
+        amount,
+        method: method as any,
+        note,
+      });
+
+      await paymentRepo.save(payment);
+
+      locked.advancePaid = (
+        Number(locked.advancePaid || 0) + Number(amount || 0)
+      ).toFixed(2);
+
+      await bookingRepo.save(locked);
+
+      return { booking: locked, payment };
     });
-
-    booking.advancePaid = (
-      Number(booking.advancePaid || 0) + Number(amount || 0)
-    ).toString();
-
-    await this.paymentRepo.save(payment);
-    await this.repo.save(booking);
-
-    return { booking, payment };
   }
 
   async cancel(id: string, refund: boolean, refundAmount?: string) {
@@ -700,6 +723,9 @@ export class TournamentService {
         .getOne();
 
       if (!booking) throw new NotFoundException("Tournament booking not found");
+
+      if (booking.status === "cancelled")
+        throw new BadRequestException("Tournament booking is cancelled");
 
       if (booking.status === "completed") {
         return { booking, payment: null };

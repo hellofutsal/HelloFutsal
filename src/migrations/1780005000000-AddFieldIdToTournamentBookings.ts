@@ -10,11 +10,12 @@ export class AddFieldIdToTournamentBookings1780005000000 implements MigrationInt
     `);
 
     await queryRunner.query(`
-      UPDATE "tournament_bookings"
-      SET "field_id" = NULLIF(("courts"->>0), '')::uuid
-      WHERE "field_id" IS NULL
-        AND jsonb_typeof("courts") = 'array'
-        AND jsonb_array_length("courts") > 0
+        UPDATE "tournament_bookings"
+        SET "field_id" = CASE
+            WHEN ("courts"->>0) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN ("courts"->>0)::uuid
+            ELSE NULL
+        END
+        WHERE ("courts"->>0) IS NOT NULL AND NULLIF(("courts"->>0), '') IS NOT NULL
     `);
 
     await queryRunner.query(`

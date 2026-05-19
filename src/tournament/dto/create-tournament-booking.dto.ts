@@ -24,11 +24,11 @@ export class CreateTournamentBookingDto {
 
   @IsOptional()
   @IsDateString()
-  startAt!: string;
+  startAt?: string;
 
   @IsOptional()
   @IsDateString()
-  endAt!: string;
+  endAt?: string;
 
   @IsOptional()
   @IsDateString()
