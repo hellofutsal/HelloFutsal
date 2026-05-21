@@ -321,6 +321,8 @@ export class AuthService {
       identifierType: savedRequest.identifierType,
       mobileNumber: savedRequest.mobileNumber,
       expiresAt: savedRequest.expiresAt,
+      onboardingNumber: 0,
+      onboardingComplete: false,
     };
 
     return response;
