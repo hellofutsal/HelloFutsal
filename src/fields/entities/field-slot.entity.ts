@@ -10,6 +10,7 @@ import {
 } from "typeorm";
 import { Field } from "./field.entity";
 import { MembershipPlan } from "../../booking/entities/membership-plan.entity";
+import { TournamentBooking } from "../../tournament/entities/tournament-booking.entity";
 
 export type FieldSlotStatus =
   | "available"
@@ -18,7 +19,7 @@ export type FieldSlotStatus =
   | "blocked"
   | "cancelled";
 
-export type SlotType = "normal" | "membership";
+export type SlotType = "normal" | "membership" | "tournament";
 
 @Entity({ name: "field_slots" })
 @Index(["fieldId", "slotDate", "startTime"], { unique: true })
@@ -57,8 +58,24 @@ export class FieldSlot {
   @Column({ name: "price", type: "numeric", precision: 12, scale: 2 })
   price!: string;
 
+  @Column({
+    name: "previous_price",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    nullable: true,
+  })
+  previousPrice!: string | null;
+
   @Column({ name: "status", type: "varchar", default: "available" })
   status!: FieldSlotStatus;
+
+  @Column({ name: "tournament_booking_id", type: "uuid", nullable: true })
+  tournamentBookingId!: string | null;
+
+  @ManyToOne(() => TournamentBooking, { onDelete: "SET NULL", nullable: true })
+  @JoinColumn({ name: "tournament_booking_id" })
+  tournamentBooking!: TournamentBooking | null;
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;

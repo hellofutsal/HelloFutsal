@@ -1,11 +1,11 @@
 meta {
-  name: Admin OTP Verify
+  name: CancelTournament
   type: http
-  seq: 2
+  seq: 1
 }
 
 post {
-  url: {{development}}/auth/admins/verify-otp
+  url: {{development}}/tournaments/{{tournamentId}}/cancel
   body: json
   auth: bearer
 }
@@ -20,7 +20,7 @@ auth:bearer {
 
 body:json {
   {
-    "requestId": "24bc5dcd-d3eb-4c74-9fbe-35a9f4e773b9",
-    "otp": "815480"
+    "refund": true,
+    "refundAmount": "30000"
   }
 }

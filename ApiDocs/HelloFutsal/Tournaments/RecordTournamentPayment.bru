@@ -1,0 +1,27 @@
+meta {
+  name: RecordTournamentPayment
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{development}}/tournaments/{{tournamentId}}/payments
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "amount": "30000",
+    "method": "cash",
+    "note": "Advance payment"
+  }
+}

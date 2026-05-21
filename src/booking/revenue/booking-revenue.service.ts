@@ -11,6 +11,8 @@ import { AuthenticatedAccount } from "../../auth/types/authenticated-account.typ
 import { Field } from "../../fields/entities/field.entity";
 import { FieldSlot } from "../../fields/entities/field-slot.entity";
 import { Booking } from "../entities/booking.entity";
+import { MembershipPlan } from "../entities/membership-plan.entity";
+import { TournamentBooking } from "../../tournament/entities/tournament-booking.entity";
 import { GetFieldBookingRevenueQueryDto } from "./dto/get-field-booking-revenue-query.dto";
 
 @Injectable()
@@ -25,6 +27,10 @@ export class BookingRevenueService {
     private readonly fieldsRepository: Repository<Field>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
+    @InjectRepository(MembershipPlan)
+    private readonly membershipPlansRepository: Repository<MembershipPlan>,
+    @InjectRepository(TournamentBooking)
+    private readonly tournamentBookingsRepository: Repository<TournamentBooking>,
   ) {}
 
   async getFieldRevenue(
@@ -60,6 +66,11 @@ export class BookingRevenueService {
       throw new ConflictException("endDate must be on or after startDate");
     }
 
+    const [membershipRevenue, tournamentRevenue] = await Promise.all([
+      this.getMembershipRevenue(fieldId),
+      this.getTournamentRevenue(fieldId),
+    ]);
+
     const baseQuery = this.bookingsRepository
       .createQueryBuilder("booking")
       .innerJoin("booking.slot", "slot")
@@ -80,31 +91,20 @@ export class BookingRevenueService {
         "COALESCE(SUM(booking.total_amount::numeric), 0)",
         "totalAmount",
       )
-      .getRawOne<{ totalBaseAmount: string; totalAmount: string }>();
-
-    let selectedPeriodRevenue = totalRevenueRaw?.totalAmount ?? "0";
-    let selectedPeriodBaseAmount = totalRevenueRaw?.totalBaseAmount ?? "0";
-
-    if (query.startDate && query.endDate) {
-      const selectedRevenueRaw = await baseQuery
-        .clone()
-        .andWhere("slot.slot_date BETWEEN :startDate AND :endDate", {
-          startDate: query.startDate,
-          endDate: query.endDate,
-        })
-        .select(
-          "COALESCE(SUM(booking.base_amount::numeric), 0)",
-          "totalBaseAmount",
-        )
-        .addSelect(
-          "COALESCE(SUM(booking.total_amount::numeric), 0)",
-          "totalAmount",
-        )
-        .getRawOne<{ totalBaseAmount: string; totalAmount: string }>();
-
-      selectedPeriodRevenue = selectedRevenueRaw?.totalAmount ?? "0";
-      selectedPeriodBaseAmount = selectedRevenueRaw?.totalBaseAmount ?? "0";
-    }
+      .addSelect(
+        "COALESCE(SUM(booking.discount_amount::numeric), 0)",
+        "totalDiscountAmount",
+      )
+      .addSelect(
+        "COALESCE(SUM(booking.extra_amount::numeric), 0)",
+        "totalExtraAmount",
+      )
+      .getRawOne<{
+        totalBaseAmount: string;
+        totalAmount: string;
+        totalDiscountAmount: string;
+        totalExtraAmount: string;
+      }>();
 
     // ── Slot stats for the selected date range ──────────────────────────────
     const slotStatsQuery = this.fieldSlotsRepository
@@ -132,7 +132,8 @@ export class BookingRevenueService {
       (sum, row) => sum + Number(row.count),
       0,
     );
-    const bookedSlots = (slotStatMap["booked"] ?? 0) + (slotStatMap["completed"] ?? 0);
+    const bookedSlots =
+      (slotStatMap["booked"] ?? 0) + (slotStatMap["completed"] ?? 0);
 
     const bookingPercentage =
       totalSlots > 0
@@ -150,13 +151,12 @@ export class BookingRevenueService {
     };
     // ─────────────────────────────────────────────────────────────────────────
 
-    return {
-      fieldId,
+    const normalRevenue = {
       totalBaseAmountTillNow: totalRevenueRaw?.totalBaseAmount ?? "0",
       totalAmountTillNow: totalRevenueRaw?.totalAmount ?? "0",
       totalRevenueTillNow: totalRevenueRaw?.totalAmount ?? "0",
-      selectedPeriodBaseAmount,
-      selectedPeriodRevenue,
+      totalDiscountAmountTillNow: totalRevenueRaw?.totalDiscountAmount ?? "0",
+      totalExtraAmountTillNow: totalRevenueRaw?.totalExtraAmount ?? "0",
       dateRange:
         query.startDate && query.endDate
           ? {
@@ -166,6 +166,129 @@ export class BookingRevenueService {
           : null,
       slotStats,
     };
+
+    const totalRevenueTillNow = this.sumMoneyStrings([
+      normalRevenue.totalRevenueTillNow,
+      membershipRevenue.paidAmount,
+      tournamentRevenue.totalRevenueTillNow,
+    ]);
+
+    const totalAmountTillNow = this.sumMoneyStrings([
+      normalRevenue.totalAmountTillNow,
+      membershipRevenue.totalAmount,
+      tournamentRevenue.totalAmountTillNow,
+    ]);
+
+    return {
+      fieldId,
+      normalRevenue,
+      membershipRevenue,
+      tournamentRevenue,
+      totalRevenue: {
+        totalAmountTillNow,
+        totalRevenueTillNow,
+      },
+    };
+  }
+
+  private async getMembershipRevenue(fieldId: string) {
+    const membershipRows = await this.membershipPlansRepository
+      .createQueryBuilder("plan")
+      .select("plan.total_amount", "totalAmount")
+      .addSelect("plan.paid_amount", "paidAmount")
+      .addSelect("plan.due_amount", "dueAmount")
+      .addSelect("plan.extra_paid_amount", "extraPaidAmount")
+      .where("plan.field_id = :fieldId", { fieldId })
+      .getRawMany<{
+        totalAmount: string;
+        paidAmount: string;
+        dueAmount: string;
+        extraPaidAmount: string;
+      }>();
+
+    const totals = membershipRows.reduce(
+      (acc, row) => {
+        acc.totalAmount += Number(row.totalAmount ?? 0) || 0;
+        acc.paidAmount += Number(row.paidAmount ?? 0) || 0;
+        acc.dueAmount += Number(row.dueAmount ?? 0) || 0;
+        acc.extraPaidAmount += Number(row.extraPaidAmount ?? 0) || 0;
+        return acc;
+      },
+      {
+        totalAmount: 0,
+        paidAmount: 0,
+        dueAmount: 0,
+        extraPaidAmount: 0,
+      },
+    );
+
+    return {
+      totalAmount: totals.totalAmount.toFixed(2),
+      paidAmount: totals.paidAmount.toFixed(2),
+      dueAmount: totals.dueAmount.toFixed(2),
+      extraPaidAmount: totals.extraPaidAmount.toFixed(2),
+    };
+  }
+
+  private async getTournamentRevenue(fieldId: string) {
+    const tournamentRows = await this.tournamentBookingsRepository
+      .createQueryBuilder("tournament")
+      .select("tournament.status", "status")
+      .addSelect("tournament.total_amount", "totalAmount")
+      .addSelect("tournament.advance_paid", "advancePaid")
+      .where("tournament.field_id = :fieldId", { fieldId })
+      .getRawMany<{
+        status: string;
+        totalAmount: string;
+        advancePaid: string;
+      }>();
+
+    const activeRows = tournamentRows.filter(
+      (row) => row.status !== "cancelled",
+    );
+
+    const totals = activeRows.reduce(
+      (acc, row) => {
+        const totalAmount = Number(row.totalAmount ?? 0);
+        const advancePaid = Number(row.advancePaid ?? 0);
+        const collectedAmount =
+          row.status === "completed" ? totalAmount : advancePaid;
+
+        acc.totalAmount += Number.isNaN(totalAmount) ? 0 : totalAmount;
+        acc.totalRevenue += Number.isNaN(collectedAmount) ? 0 : collectedAmount;
+        return acc;
+      },
+      { totalAmount: 0, totalRevenue: 0 },
+    );
+
+    const dueAmount = Math.max(totals.totalAmount - totals.totalRevenue, 0);
+
+    return {
+      totalAmountTillNow: totals.totalAmount.toFixed(2),
+      totalRevenueTillNow: totals.totalRevenue.toFixed(2),
+      dueAmount: dueAmount.toFixed(2),
+      tournamentStats: {
+        totalTournaments: tournamentRows.length,
+        confirmedTournaments: tournamentRows.filter(
+          (row) => row.status === "confirmed",
+        ).length,
+        completedTournaments: tournamentRows.filter(
+          (row) => row.status === "completed",
+        ).length,
+        cancelledTournaments: tournamentRows.filter(
+          (row) => row.status === "cancelled",
+        ).length,
+      },
+    };
+  }
+
+  private sumMoneyStrings(values: Array<string | number | null | undefined>) {
+    const total = values.reduce<number>((sum, value) => {
+      const numericValue = Number(value ?? 0);
+      return sum + (Number.isNaN(numericValue) ? 0 : numericValue);
+    }, 0);
+
+    return total.toFixed(2);
   }
 
   async downloadBookingPdf(

@@ -9,6 +9,9 @@ import { GroundOwnerAccount } from "./auth/entities/ground-owner.entity";
 import { UserAccount } from "./auth/entities/user.entity";
 import { Booking } from "./booking/entities/booking.entity";
 import { BookingModule } from "./booking/booking.module";
+import { TournamentModule } from "./tournament/tournament.module";
+import { TournamentBooking } from "./tournament/entities/tournament-booking.entity";
+import { TournamentPayment } from "./tournament/entities/tournament-payment.entity";
 import { FieldRuleBook } from "./fields/entities/field-rule-book.entity";
 import { Field } from "./fields/entities/field.entity";
 import { FieldScheduleSettings } from "./fields/entities/field-schedule-settings.entity";
@@ -125,6 +128,8 @@ function getDatabaseConfig(configService: ConfigService) {
             UserAccount,
             GroundOwnerAccount,
             Booking,
+            TournamentBooking,
+            TournamentPayment,
             Field,
             FieldScheduleSettings,
             FieldRuleBook,
@@ -142,6 +147,7 @@ function getDatabaseConfig(configService: ConfigService) {
     }),
     AuthModule,
     BookingModule,
+    TournamentModule,
     FieldsModule,
     KeepAliveModule,
   ],
