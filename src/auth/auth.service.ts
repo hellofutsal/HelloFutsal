@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   UnauthorizedException,
+  NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import * as bcrypt from "bcryptjs";
@@ -321,8 +322,6 @@ export class AuthService {
       identifierType: savedRequest.identifierType,
       mobileNumber: savedRequest.mobileNumber,
       expiresAt: savedRequest.expiresAt,
-      onboardingNumber: 0,
-      onboardingComplete: false,
     };
 
     return response;
@@ -467,6 +466,29 @@ export class AuthService {
       onboardingNumber: admin.onboardingNumber,
       onboardingComplete: admin.onboardingComplete,
     });
+  }
+
+  async updateAdminOnboarding(adminId: string, onboardingNumber: number) {
+    const onboardingComplete = onboardingNumber === 2 || onboardingNumber === 3;
+
+    await this.groundOwnerAccountsRepository.update(
+      { id: adminId },
+      { onboardingNumber, onboardingComplete },
+    );
+
+    const updated = await this.groundOwnerAccountsRepository.findOne({
+      where: { id: adminId },
+    });
+
+    if (!updated) {
+      throw new NotFoundException("Admin not found");
+    }
+
+    return {
+      id: updated.id,
+      onboardingNumber: updated.onboardingNumber,
+      onboardingComplete: updated.onboardingComplete,
+    };
   }
 
   private async ensureEmailIsAvailable(email: string): Promise<void> {

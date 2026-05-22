@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  UseGuards,
+  ForbiddenException,
+} from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { CurrentAccount } from "./decorators/current-account.decorator";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
@@ -8,6 +16,7 @@ import { RequestUserSignupOtpDto } from "./dto/request-user-signup-otp.dto";
 import { VerifyAdminSignupOtpDto } from "./dto/verify-admin-signup-otp.dto";
 import { VerifyUserSignupOtpDto } from "./dto/verify-user-signup-otp.dto";
 import { AuthenticatedAccount } from "./types/authenticated-account.type";
+import { UpdateAdminOnboardingDto } from "./dto/update-admin-onboarding.dto";
 
 @Controller("auth")
 export class AuthController {
@@ -57,5 +66,21 @@ export class AuthController {
   @Get("me")
   getCurrentAccount(@CurrentAccount() account: AuthenticatedAccount) {
     return { account };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch("admins/onboarding")
+  updateAdminOnboarding(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Body() updateAdminOnboardingDto: UpdateAdminOnboardingDto,
+  ) {
+    if (account.role !== "admin") {
+      throw new ForbiddenException("Only admins can update onboarding status");
+    }
+
+    return this.authService.updateAdminOnboarding(
+      account.id,
+      updateAdminOnboardingDto.onboardingNumber,
+    );
   }
 }
