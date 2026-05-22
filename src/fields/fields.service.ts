@@ -748,11 +748,16 @@ export class FieldsService {
 
         const saved = await settingsRepository.save(settings);
 
-        // Advance to the schedule step, but leave onboarding incomplete until the dedicated update API runs.
-        await groundOwnerRepo.update(
-          { id: account.id },
-          { onboardingNumber: 2, onboardingComplete: false },
-        );
+        const existingFieldCount = await manager.getRepository(Field).count({
+          where: { ownerId: account.id },
+        });
+
+        if (existingFieldCount === 0 || existingFieldCount === 1) {
+          await groundOwnerRepo.update(
+            { id: account.id },
+            { onboardingNumber: 2, onboardingComplete: false },
+          );
+        }
 
         return saved;
       },
