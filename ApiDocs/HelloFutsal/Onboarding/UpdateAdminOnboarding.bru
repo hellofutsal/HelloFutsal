@@ -1,0 +1,26 @@
+meta {
+  name: UpdateAdminOnboarding
+  type: http
+  seq: 1
+}
+
+patch {
+  url: {{development}}/auth/admins/onboarding
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+  ~Authorization: Bearer $TOKEN
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "onboardingNumber": 3
+  }
+}

@@ -748,11 +748,16 @@ export class FieldsService {
 
         const saved = await settingsRepository.save(settings);
 
-        // Set onboardingNumber = 2 and onboardingComplete = true only after successful save
-        await groundOwnerRepo.update(
-          { id: account.id },
-          { onboardingNumber: 2, onboardingComplete: true },
-        );
+        const existingFieldCount = await manager.getRepository(Field).count({
+          where: { ownerId: account.id },
+        });
+
+        if (existingFieldCount === 0 || existingFieldCount === 1) {
+          await groundOwnerRepo.update(
+            { id: account.id },
+            { onboardingNumber: 2, onboardingComplete: false },
+          );
+        }
 
         return saved;
       },
