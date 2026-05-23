@@ -197,6 +197,7 @@ export class BookingRevenueService {
     const membershipSummary = await this.fieldsService.getFieldSlotSummary(
       fieldId,
       account.id,
+      { includeInactive: true },
     );
 
     const totals = membershipSummary.membershipPlans.reduce(

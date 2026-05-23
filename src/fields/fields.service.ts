@@ -434,9 +434,16 @@ export class FieldsService {
     });
   }
 
-  async getFieldSlotSummary(fieldId: string, requestingAccountId: string) {
+  async getFieldSlotSummary(
+    fieldId: string,
+    requestingAccountId: string,
+    options?: { includeInactive?: boolean },
+  ) {
     const field = await this.fieldsRepository.findOne({
-      where: { id: fieldId, isActive: true },
+      where: {
+        id: fieldId,
+        ...(options?.includeInactive ? {} : { isActive: true }),
+      },
       relations: { scheduleSettings: true, owner: true },
     });
 
