@@ -10,8 +10,8 @@ import PDFDocument from "pdfkit";
 import { AuthenticatedAccount } from "../../auth/types/authenticated-account.type";
 import { Field } from "../../fields/entities/field.entity";
 import { FieldSlot } from "../../fields/entities/field-slot.entity";
+import { FieldsService } from "../../fields/fields.service";
 import { Booking } from "../entities/booking.entity";
-import { MembershipPlan } from "../entities/membership-plan.entity";
 import { TournamentBooking } from "../../tournament/entities/tournament-booking.entity";
 import { GetFieldBookingRevenueQueryDto } from "./dto/get-field-booking-revenue-query.dto";
 
@@ -27,10 +27,9 @@ export class BookingRevenueService {
     private readonly fieldsRepository: Repository<Field>,
     @InjectRepository(FieldSlot)
     private readonly fieldSlotsRepository: Repository<FieldSlot>,
-    @InjectRepository(MembershipPlan)
-    private readonly membershipPlansRepository: Repository<MembershipPlan>,
     @InjectRepository(TournamentBooking)
     private readonly tournamentBookingsRepository: Repository<TournamentBooking>,
+    private readonly fieldsService: FieldsService,
   ) {}
 
   async getFieldRevenue(
@@ -67,7 +66,7 @@ export class BookingRevenueService {
     }
 
     const [membershipRevenue, tournamentRevenue] = await Promise.all([
-      this.getMembershipRevenue(fieldId),
+      this.getMembershipRevenue(account, fieldId),
       this.getTournamentRevenue(fieldId),
     ]);
 
@@ -191,27 +190,23 @@ export class BookingRevenueService {
     };
   }
 
-  private async getMembershipRevenue(fieldId: string) {
-    const membershipRows = await this.membershipPlansRepository
-      .createQueryBuilder("plan")
-      .select("plan.total_amount", "totalAmount")
-      .addSelect("plan.paid_amount", "paidAmount")
-      .addSelect("plan.due_amount", "dueAmount")
-      .addSelect("plan.extra_paid_amount", "extraPaidAmount")
-      .where("plan.field_id = :fieldId", { fieldId })
-      .getRawMany<{
-        totalAmount: string;
-        paidAmount: string;
-        dueAmount: string;
-        extraPaidAmount: string;
-      }>();
+  private async getMembershipRevenue(
+    account: AuthenticatedAccount,
+    fieldId: string,
+  ) {
+    const membershipSummary = await this.fieldsService.getFieldSlotSummary(
+      fieldId,
+      account.id,
+    );
 
-    const totals = membershipRows.reduce(
-      (acc, row) => {
-        acc.totalAmount += Number(row.totalAmount ?? 0) || 0;
-        acc.paidAmount += Number(row.paidAmount ?? 0) || 0;
-        acc.dueAmount += Number(row.dueAmount ?? 0) || 0;
-        acc.extraPaidAmount += Number(row.extraPaidAmount ?? 0) || 0;
+    const totals = membershipSummary.membershipPlans.reduce(
+      (acc, plan) => {
+        const summary = plan.summary;
+
+        acc.totalAmount += Number(summary.totalAmount ?? 0) || 0;
+        acc.paidAmount += Number(summary.paidAmount ?? 0) || 0;
+        acc.dueAmount += Number(summary.dueAmount ?? 0) || 0;
+        acc.extraPaidAmount += Number(summary.extraPaidAmount ?? 0) || 0;
         return acc;
       },
       {
