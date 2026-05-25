@@ -95,6 +95,14 @@ export class Booking {
   })
   discountAmount!: string;
 
+  @Column({ name: "selected_inventory", type: "jsonb", nullable: true })
+  selectedInventory?: Array<{
+    name: string;
+    quantity: number;
+    unitPrice: string;
+    subtotal: string;
+  }> | null;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 
