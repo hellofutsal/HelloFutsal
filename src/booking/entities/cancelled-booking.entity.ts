@@ -80,6 +80,14 @@ export class CancelledBooking {
   })
   discountAmount!: string;
 
+  @Column({ name: "selected_inventory", type: "jsonb", nullable: true })
+  selectedInventory?: Array<{
+    name: string;
+    quantity: number;
+    unitPrice: string;
+    subtotal: string;
+  }> | null;
+
   @Column({ name: "created_at", type: "timestamp" })
   createdAt!: Date;
 

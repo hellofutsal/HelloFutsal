@@ -268,51 +268,114 @@ export class BookingService {
       }
 
       const baseAmount = Number(slot.price);
-      const providedTotal = confirmBookingDto.totalAmount;
-      const totalAmount =
-        providedTotal === undefined ? baseAmount : Number(providedTotal);
-
-      // If discount flag provided explicitly, validate consistency; otherwise infer it.
-      if (confirmBookingDto.discount === undefined) {
-        if (totalAmount < baseAmount) {
-          booking.discount = true;
-          booking.discountAmount = this.formatAmount(baseAmount - totalAmount);
-          booking.extraAmount = this.formatAmount(0);
-        } else if (totalAmount > baseAmount) {
-          booking.discount = false;
-          booking.extraAmount = this.formatAmount(totalAmount - baseAmount);
-          booking.discountAmount = this.formatAmount(0);
-        } else {
-          booking.discount = false;
-          booking.extraAmount = this.formatAmount(0);
-          booking.discountAmount = this.formatAmount(0);
-        }
-      } else {
-        // explicit flag: validate
-        if (confirmBookingDto.discount && totalAmount >= baseAmount) {
-          throw new ConflictException(
-            "When discount is enabled, total amount should be less than base amount.",
-          );
-        }
-
-        if (!confirmBookingDto.discount && totalAmount < baseAmount) {
-          throw new ConflictException(
-            "Total amount cannot be less than base amount. Please toggle on the discount button to apply discount.",
-          );
-        }
-
-        booking.discount = confirmBookingDto.discount;
-        if (booking.discount) {
-          booking.discountAmount = this.formatAmount(baseAmount - totalAmount);
-          booking.extraAmount = this.formatAmount(0);
-        } else {
-          booking.extraAmount = this.formatAmount(totalAmount - baseAmount);
-          booking.discountAmount = this.formatAmount(0);
-        }
-      }
+      const fieldInventory = this.normalizeFieldInventoryCatalog(
+        booking.field.inventory,
+      );
+      const selectedInventory = this.normalizeInventorySelection(
+        confirmBookingDto.inventoryItems,
+      );
 
       booking.baseAmount = this.formatAmount(slot.price);
-      booking.totalAmount = this.formatAmount(totalAmount);
+
+      if (selectedInventory.length > 0) {
+        const pricedInventory = this.buildSelectedInventorySnapshot(
+          selectedInventory,
+          fieldInventory,
+        );
+        const inventorySubtotal = pricedInventory.reduce(
+          (sum, item) => sum + Number(item.subtotal),
+          0,
+        );
+        const combinedAmount = baseAmount + inventorySubtotal;
+        const providedTotal = confirmBookingDto.totalAmount;
+
+        const totalAmount =
+          providedTotal === undefined ? combinedAmount : Number(providedTotal);
+
+        if (confirmBookingDto.discount === undefined) {
+          if (totalAmount < combinedAmount) {
+            booking.discount = true;
+            booking.discountAmount = this.formatAmount(
+              combinedAmount - totalAmount,
+            );
+          } else {
+            booking.discount = false;
+            booking.discountAmount = this.formatAmount(0);
+          }
+        } else {
+          if (confirmBookingDto.discount && totalAmount >= combinedAmount) {
+            throw new ConflictException(
+              "When discount is enabled, total amount should be less than the combined inventory amount.",
+            );
+          }
+
+          if (!confirmBookingDto.discount && totalAmount < combinedAmount) {
+            throw new ConflictException(
+              "Total amount cannot be less than the combined inventory amount. Please toggle on the discount button to apply discount.",
+            );
+          }
+
+          booking.discount = confirmBookingDto.discount;
+          booking.discountAmount = booking.discount
+            ? this.formatAmount(combinedAmount - totalAmount)
+            : this.formatAmount(0);
+        }
+
+        booking.extraAmount = this.formatAmount(inventorySubtotal);
+        booking.totalAmount = this.formatAmount(totalAmount);
+        booking.selectedInventory = pricedInventory;
+      } else {
+        const providedTotal = confirmBookingDto.totalAmount;
+        const totalAmount =
+          providedTotal === undefined ? baseAmount : Number(providedTotal);
+
+        // If discount flag provided explicitly, validate consistency; otherwise infer it.
+        if (confirmBookingDto.discount === undefined) {
+          if (totalAmount < baseAmount) {
+            booking.discount = true;
+            booking.discountAmount = this.formatAmount(
+              baseAmount - totalAmount,
+            );
+            booking.extraAmount = this.formatAmount(0);
+          } else if (totalAmount > baseAmount) {
+            booking.discount = false;
+            booking.extraAmount = this.formatAmount(totalAmount - baseAmount);
+            booking.discountAmount = this.formatAmount(0);
+          } else {
+            booking.discount = false;
+            booking.extraAmount = this.formatAmount(0);
+            booking.discountAmount = this.formatAmount(0);
+          }
+        } else {
+          // explicit flag: validate
+          if (confirmBookingDto.discount && totalAmount >= baseAmount) {
+            throw new ConflictException(
+              "When discount is enabled, total amount should be less than base amount.",
+            );
+          }
+
+          if (!confirmBookingDto.discount && totalAmount < baseAmount) {
+            throw new ConflictException(
+              "Total amount cannot be less than base amount. Please toggle on the discount button to apply discount.",
+            );
+          }
+
+          booking.discount = confirmBookingDto.discount;
+          if (booking.discount) {
+            booking.discountAmount = this.formatAmount(
+              baseAmount - totalAmount,
+            );
+            booking.extraAmount = this.formatAmount(0);
+          } else {
+            booking.extraAmount = this.formatAmount(totalAmount - baseAmount);
+            booking.discountAmount = this.formatAmount(0);
+          }
+        }
+
+        booking.totalAmount = this.formatAmount(totalAmount);
+        booking.selectedInventory = null;
+      }
+
       booking.status = "completed";
       await bookingRepository.save(booking);
 
@@ -332,6 +395,7 @@ export class BookingService {
           totalAmount: booking.totalAmount,
           extraAmount: booking.extraAmount,
           discountAmount: booking.discountAmount,
+          selectedInventory: booking.selectedInventory,
         },
         slot: {
           id: slot.id,
@@ -571,6 +635,7 @@ export class BookingService {
           discount: booking.discount,
           extraAmount: booking.extraAmount,
           discountAmount: booking.discountAmount,
+          selectedInventory: booking.selectedInventory,
           createdAt: booking.createdAt,
           cancelledBy: account.id,
         }),
@@ -596,6 +661,7 @@ export class BookingService {
           totalAmount: booking.totalAmount,
           extraAmount: booking.extraAmount,
           discountAmount: booking.discountAmount,
+          selectedInventory: booking.selectedInventory,
           createdAt: booking.createdAt,
           updatedAt: booking.updatedAt,
         },
@@ -650,6 +716,7 @@ export class BookingService {
         totalAmount: booking.totalAmount,
         extraAmount: booking.extraAmount,
         discountAmount: booking.discountAmount,
+        selectedInventory: booking.selectedInventory,
         createdAt: booking.createdAt,
         updatedAt: booking.updatedAt,
       },
@@ -704,6 +771,7 @@ export class BookingService {
         totalAmount: booking.totalAmount,
         extraAmount: booking.extraAmount,
         discountAmount: booking.discountAmount,
+        selectedInventory: booking.selectedInventory,
         createdAt: booking.createdAt,
         updatedAt: booking.updatedAt,
       },
@@ -1019,6 +1087,81 @@ export class BookingService {
       .getOne();
 
     return pricingHistory ? pricingHistory.perSlotPrice : fallbackPrice;
+  }
+
+  private normalizeFieldInventoryCatalog(
+    inventory: Record<string, string> | null | undefined,
+  ): Record<string, string> {
+    if (!inventory) {
+      return {};
+    }
+
+    return inventory;
+  }
+
+  private normalizeInventorySelection(
+    inventoryItems: Record<string, unknown> | undefined,
+  ): Array<{ name: string; quantity: number }> {
+    if (!inventoryItems) {
+      return [];
+    }
+
+    if (inventoryItems === null || Array.isArray(inventoryItems)) {
+      throw new BadRequestException(
+        "inventoryItems must be a key/value object of quantities",
+      );
+    }
+
+    return Object.entries(inventoryItems).map(([name, quantityValue]) => {
+      const trimmedName = name.trim().toLowerCase();
+      if (!trimmedName) {
+        throw new BadRequestException("inventory item names cannot be empty");
+      }
+
+      const quantity = Number(quantityValue);
+      if (!Number.isInteger(quantity) || quantity < 1) {
+        throw new BadRequestException(
+          `quantity for ${trimmedName} must be a positive whole number`,
+        );
+      }
+
+      return { name: trimmedName, quantity };
+    });
+  }
+
+  private buildSelectedInventorySnapshot(
+    selectedInventory: Array<{ name: string; quantity: number }>,
+    fieldInventory: Record<string, string>,
+  ): Array<{
+    name: string;
+    quantity: number;
+    unitPrice: string;
+    subtotal: string;
+  }> {
+    return selectedInventory.map(({ name, quantity }) => {
+      const unitPrice = fieldInventory[name];
+      if (unitPrice === undefined) {
+        throw new ConflictException(
+          `Inventory item ${name} is not configured for this field`,
+        );
+      }
+
+      const unitPriceNumber = Number(unitPrice);
+      if (!Number.isFinite(unitPriceNumber)) {
+        throw new ConflictException(
+          `Inventory item ${name} has an invalid configured price`,
+        );
+      }
+
+      const subtotal = Number((unitPriceNumber * quantity).toFixed(2));
+
+      return {
+        name,
+        quantity,
+        unitPrice: this.formatAmount(unitPriceNumber),
+        subtotal: this.formatAmount(subtotal),
+      };
+    });
   }
 
   /**

@@ -1,6 +1,7 @@
 import { Transform } from "class-transformer";
 import {
   IsBoolean,
+  IsObject,
   IsNumber,
   IsOptional,
   Min,
@@ -48,4 +49,23 @@ export class ConfirmBookingDto {
     message: "totalAmount is required when discount is enabled",
   })
   totalAmount?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+
+    if (typeof value === "string") {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+
+    return value;
+  })
+  @IsObject({ message: "inventoryItems must be a key/value object" })
+  inventoryItems?: Record<string, unknown>;
 }

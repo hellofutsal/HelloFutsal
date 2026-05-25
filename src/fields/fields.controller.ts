@@ -22,6 +22,7 @@ import { CreateFieldRuleBookDto } from "./dto/create-field-rule-book.dto";
 import { CreateFieldScheduleSettingsDto } from "./dto/create-field-schedule-settings.dto";
 import { CreateFieldSlotDto } from "./dto/create-field-slot.dto";
 import { GetFieldSlotsQueryDto } from "./dto/get-field-slots-query.dto";
+import { UpdateFieldInventoryDto } from "./dto/update-field-inventory.dto";
 import { FieldsService } from "./fields.service";
 
 @Controller("fields")
@@ -70,6 +71,17 @@ export class FieldsController {
     createFieldDtos: CreateFieldDto[],
   ) {
     return this.fieldsService.createMany(account, createFieldDtos);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(":fieldId/inventory")
+  updateInventory(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Body() payload: UpdateFieldInventoryDto,
+  ) {
+    const dto = this.validateInventoryDto(payload, "inventory");
+    return this.fieldsService.updateFieldInventory(account, fieldId, dto);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -253,6 +265,24 @@ export class FieldsController {
 
   private validateSlotDto(value: unknown, label: string): CreateFieldSlotDto {
     const dto = plainToInstance(CreateFieldSlotDto, value);
+    const errors = validateSync(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    if (errors.length > 0) {
+      const message = this.collectValidationMessages(errors).join(", ");
+      throw new BadRequestException(`${label}: ${message}`);
+    }
+
+    return dto;
+  }
+
+  private validateInventoryDto(
+    value: unknown,
+    label: string,
+  ): UpdateFieldInventoryDto {
+    const dto = plainToInstance(UpdateFieldInventoryDto, value);
     const errors = validateSync(dto, {
       whitelist: true,
       forbidNonWhitelisted: true,

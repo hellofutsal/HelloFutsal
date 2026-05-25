@@ -1,5 +1,12 @@
 import { Transform } from "class-transformer";
-import { IsNumber, IsOptional, IsString, Length, Min } from "class-validator";
+import {
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  Length,
+  Min,
+} from "class-validator";
 
 export class CreateFieldDto {
   @IsString()
@@ -44,4 +51,23 @@ export class CreateFieldDto {
   @IsString()
   @Length(2, 1000)
   description?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+
+    if (typeof value === "string") {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+
+    return value;
+  })
+  @IsObject({ message: "inventory must be a key/value object" })
+  inventory?: Record<string, unknown>;
 }

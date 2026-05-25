@@ -18,6 +18,7 @@ import {
 } from "./dto/create-field-rule-book.dto";
 import { CreateFieldScheduleSettingsDto } from "./dto/create-field-schedule-settings.dto";
 import { CreateFieldSlotDto } from "./dto/create-field-slot.dto";
+import { UpdateFieldInventoryDto } from "./dto/update-field-inventory.dto";
 import { FieldSlotGenerator } from "./cron/field-slot-generator";
 import { FieldSlotSyncService } from "./cron/field-slot-sync.service";
 import { FieldRuleBook } from "./entities/field-rule-book.entity";
@@ -91,6 +92,7 @@ export class FieldsService {
       city: normalizedField.city,
       address: normalizedField.address,
       description: normalizedField.description,
+      inventory: normalizedField.inventory ?? null,
       isActive: true,
     });
 
@@ -178,6 +180,7 @@ export class FieldsService {
         city: normalizedField.city,
         address: normalizedField.address,
         description: normalizedField.description,
+        inventory: normalizedField.inventory ?? null,
         isActive: true,
       }),
     );
@@ -404,6 +407,7 @@ export class FieldsService {
               email: booking.user.email,
               baseAmount: booking.baseAmount,
               totalAmount: booking.totalAmount,
+              selectedInventory: booking.selectedInventory,
             },
           ]),
       );
@@ -651,6 +655,7 @@ export class FieldsService {
           baseAmount: booking.baseAmount,
           totalAmount: booking.totalAmount,
           discount: booking.discount,
+          selectedInventory: booking.selectedInventory,
         };
       }
     }
@@ -984,6 +989,46 @@ export class FieldsService {
     }
   }
 
+  async updateFieldInventory(
+    account: AuthenticatedAccount,
+    fieldId: string,
+    updateFieldInventoryDto: UpdateFieldInventoryDto,
+  ) {
+    this.ensureAdmin(account);
+
+    const field = await this.fieldsRepository.findOne({
+      where: { id: fieldId, ownerId: account.id },
+    });
+
+    if (!field) {
+      throw new NotFoundException("Field not found");
+    }
+
+    field.inventory = this.normalizeFieldInventory(
+      updateFieldInventoryDto.inventory,
+    );
+
+    const savedField = await this.fieldsRepository.save(field);
+
+    return {
+      field: {
+        id: savedField.id,
+        ownerId: savedField.ownerId,
+        venueName: savedField.venueName,
+        fieldName: savedField.fieldName,
+        playerCapacity: savedField.playerCapacity,
+        city: savedField.city,
+        address: savedField.address,
+        description: savedField.description,
+        inventory: savedField.inventory,
+        isActive: savedField.isActive,
+        createdAt: savedField.createdAt,
+        updatedAt: savedField.updatedAt,
+      },
+      message: "Field inventory updated successfully",
+    };
+  }
+
   async updateFieldRuleBook(
     account: AuthenticatedAccount,
     fieldId: string,
@@ -1242,6 +1287,7 @@ export class FieldsService {
     city?: string;
     address?: string;
     description?: string;
+    inventory?: Record<string, string>;
   } {
     const venueName = createFieldDto.venueName.trim();
     if (venueName.length < 2 || venueName.length > 120) {
@@ -1277,7 +1323,56 @@ export class FieldsService {
         2,
         1000,
       ),
+      inventory: this.normalizeFieldInventory(createFieldDto.inventory),
     };
+  }
+
+  private normalizeFieldInventory(
+    inventory: Record<string, unknown> | undefined,
+  ): Record<string, string> | undefined {
+    if (inventory === undefined) {
+      return undefined;
+    }
+
+    if (inventory === null || Array.isArray(inventory)) {
+      throw new BadRequestException("inventory must be a key/value object");
+    }
+
+    const normalizedEntries = Object.entries(inventory).map(
+      ([itemName, rawAmount]) => {
+        const trimmedName = itemName.trim().toLowerCase();
+        if (!trimmedName) {
+          throw new BadRequestException("inventory item names cannot be empty");
+        }
+
+        if (typeof rawAmount === "boolean") {
+          throw new BadRequestException(
+            `inventory amount for ${trimmedName} must be a valid non-negative number`,
+          );
+        }
+
+        if (typeof rawAmount === "string" && rawAmount.trim() === "") {
+          throw new BadRequestException(
+            `inventory amount for ${trimmedName} must be a valid non-negative number`,
+          );
+        }
+
+        const amountNumber =
+          typeof rawAmount === "number"
+            ? rawAmount
+            : parseFloat(String(rawAmount).trim());
+
+        if (!Number.isFinite(amountNumber) || amountNumber < 0) {
+          throw new BadRequestException(
+            `inventory amount for ${trimmedName} must be a valid non-negative number`,
+          );
+        }
+
+        return [trimmedName, amountNumber.toFixed(2)] as const;
+      },
+    );
+
+    return Object.fromEntries(normalizedEntries);
   }
 
   private normalizeOptionalText(

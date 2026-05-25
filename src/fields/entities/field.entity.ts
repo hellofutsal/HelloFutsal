@@ -48,6 +48,9 @@ export class Field {
   @Column({ type: "text", nullable: true })
   description?: string;
 
+  @Column({ name: "inventory", type: "jsonb", nullable: true })
+  inventory?: Record<string, string> | null;
+
   @Column({ name: "is_active", type: "boolean", default: true })
   isActive!: boolean;
 
