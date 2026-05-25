@@ -1345,7 +1345,23 @@ export class FieldsService {
           throw new BadRequestException("inventory item names cannot be empty");
         }
 
-        const amountNumber = Number(rawAmount);
+        if (typeof rawAmount === "boolean") {
+          throw new BadRequestException(
+            `inventory amount for ${trimmedName} must be a valid non-negative number`,
+          );
+        }
+
+        if (typeof rawAmount === "string" && rawAmount.trim() === "") {
+          throw new BadRequestException(
+            `inventory amount for ${trimmedName} must be a valid non-negative number`,
+          );
+        }
+
+        const amountNumber =
+          typeof rawAmount === "number"
+            ? rawAmount
+            : parseFloat(String(rawAmount).trim());
+
         if (!Number.isFinite(amountNumber) || amountNumber < 0) {
           throw new BadRequestException(
             `inventory amount for ${trimmedName} must be a valid non-negative number`,
