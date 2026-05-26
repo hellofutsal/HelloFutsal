@@ -9,6 +9,7 @@ import { FieldSlot } from "../fields/entities/field-slot.entity";
 import { BookingController } from "./booking.controller";
 import { BookingService } from "./booking.service";
 import { MembershipPlanController } from "./membership-plan.controller";
+import { MembershipPlanService } from "./membership-plan.service";
 import { BookingRevenueModule } from "./revenue/booking-revenue.module";
 import { Field } from "../fields/entities/field.entity";
 import { FieldsModule } from "../fields/fields.module";
@@ -36,6 +37,6 @@ import { CancelledBooking } from "./entities/cancelled-booking.entity";
     MembershipPlanController,
     MembershipPaymentController,
   ],
-  providers: [BookingService, MembershipPaymentService],
+  providers: [BookingService, MembershipPaymentService, MembershipPlanService],
 })
 export class BookingModule {}

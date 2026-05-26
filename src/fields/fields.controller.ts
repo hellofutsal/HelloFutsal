@@ -40,6 +40,11 @@ export class FieldsController {
     return this.fieldsService.listMine(account);
   }
 
+  @Get(":fieldId")
+  getFieldById(@Param("fieldId", new ParseUUIDPipe()) fieldId: string) {
+    return this.fieldsService.getFieldById(fieldId);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post()
   create(
