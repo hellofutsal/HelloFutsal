@@ -65,6 +65,18 @@ export class FieldsService {
     });
   }
 
+  async getFieldById(fieldId: string) {
+    const field = await this.fieldsRepository.findOne({
+      where: { id: fieldId, isActive: true },
+    });
+
+    if (!field) {
+      throw new NotFoundException("Field not found or is inactive");
+    }
+
+    return field;
+  }
+
   async listMine(account: AuthenticatedAccount) {
     this.ensureAdmin(account);
 

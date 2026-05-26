@@ -39,6 +39,7 @@ import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
 import { getMembershipTimeWindows } from "./membership-plan-schedule.utils";
+import { MembershipPlanService } from "./membership-plan.service";
 
 @Controller("membership-plans")
 export class MembershipPlanController {
@@ -58,6 +59,7 @@ export class MembershipPlanController {
     @InjectRepository(MembershipPricingHistory)
     private readonly pricingHistoryRepo: Repository<MembershipPricingHistory>,
     private readonly fieldsService: FieldsService,
+    private readonly membershipPlanService: MembershipPlanService,
   ) {}
 
   /**
@@ -370,6 +372,18 @@ export class MembershipPlanController {
     end2: number,
   ): boolean {
     return (start1 < end2 && end1 > start2) || (start2 < end1 && end2 > start1);
+  }
+
+  @Get(":id")
+  @UseGuards(JwtAuthGuard)
+  async getMembershipPlanById(
+    @Param("id", new ParseUUIDPipe()) planId: string,
+    @CurrentAccount() currentUser: AuthenticatedAccount,
+  ) {
+    return this.membershipPlanService.findMembershipPlanById(
+      planId,
+      currentUser,
+    );
   }
 
   @Patch(":id/upgrade-price")
