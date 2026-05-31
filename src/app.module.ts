@@ -9,6 +9,7 @@ import { GroundOwnerAccount } from "./auth/entities/ground-owner.entity";
 import { UserAccount } from "./auth/entities/user.entity";
 import { Booking } from "./booking/entities/booking.entity";
 import { BookingModule } from "./booking/booking.module";
+import { UsersModule } from "./users/users.module";
 import { TournamentModule } from "./tournament/tournament.module";
 import { TournamentBooking } from "./tournament/entities/tournament-booking.entity";
 import { TournamentPayment } from "./tournament/entities/tournament-payment.entity";
@@ -147,6 +148,7 @@ function getDatabaseConfig(configService: ConfigService) {
     }),
     AuthModule,
     BookingModule,
+    UsersModule,
     TournamentModule,
     FieldsModule,
     KeepAliveModule,
