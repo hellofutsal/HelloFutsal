@@ -7,4 +7,6 @@ export interface AuthenticatedAccount {
   mobileNumber?: string;
   role: AccountRole;
   name?: string;
+  onboardingNumber?: number;
+  onboardingComplete?: boolean;
 }

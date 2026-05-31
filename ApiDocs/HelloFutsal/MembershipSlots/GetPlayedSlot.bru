@@ -1,0 +1,20 @@
+meta {
+  name: GetPlayedSlot
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{development}}/membership-plans/{{membershipId}}/played-slots
+  body: none
+  auth: bearer
+}
+
+headers {
+  Authorization: Bearer <JWT>
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}

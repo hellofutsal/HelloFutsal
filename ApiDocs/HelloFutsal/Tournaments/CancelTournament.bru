@@ -1,0 +1,26 @@
+meta {
+  name: CancelTournament
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{development}}/tournaments/{{tournamentId}}/cancel
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "refund": true,
+    "refundAmount": "30000"
+  }
+}

@@ -17,6 +17,8 @@ import {
   ValidateIf,
   ValidateNested,
 } from "class-validator";
+import { Validate } from "class-validator";
+import { DateYYYYMMDDConstraint } from "../../booking/dto/date-yyyymmdd.constraint";
 
 export enum RuleBookSlotSelectionType {
   ALL_SLOTS = "allSlots",
@@ -138,6 +140,10 @@ export class RuleBookSpecificSlotDto {
 }
 
 export class CreateFieldRuleBookDto {
+  @IsOptional()
+  @Validate(DateYYYYMMDDConstraint)
+  effectiveDate?: string; // YYYY-MM-DD when this update should take effect
+
   @IsOptional()
   @IsObject()
   slot_selection?: { type?: unknown };

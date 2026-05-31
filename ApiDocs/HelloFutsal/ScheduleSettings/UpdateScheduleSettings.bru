@@ -1,10 +1,10 @@
 meta {
-  name: CreateFieldScheduleSettings
+  name: UpdateScheduleSettings
   type: http
   seq: 4
 }
 
-post {
+patch {
   url: {{development}}/fields/{{fieldId}}/schedule-settings
   body: json
   auth: bearer
@@ -23,10 +23,10 @@ body:json {
   {
     "slotDurationMin": 60,
     "breakBetweenMin": 0,
-    "basePrice": 1400,
+    "basePrice": 1500,
     "operatingHours": {
       "openingTime": "06:00",
-      "closingTime": "14:00"
+      "closingTime": "22:00"
     }
   }
 }

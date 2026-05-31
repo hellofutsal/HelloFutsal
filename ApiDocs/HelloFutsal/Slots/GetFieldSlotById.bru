@@ -1,0 +1,15 @@
+meta {
+  name: GetFieldSlotById
+  type: http
+  seq: 16
+}
+
+get {
+  url: {{development}}/fields/{{fieldId}}/slots/{{slotId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}

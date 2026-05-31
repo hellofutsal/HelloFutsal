@@ -48,6 +48,9 @@ export class FieldRuleBook {
   @Column({ name: "is_active", type: "boolean", default: true })
   isActive!: boolean;
 
+  @Column({ name: "effective_date", type: "date", nullable: true })
+  effectiveDate!: string | null;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 

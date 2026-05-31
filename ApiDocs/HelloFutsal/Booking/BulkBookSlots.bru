@@ -1,0 +1,29 @@
+meta {
+  name: BulkBookSlots
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{development}}/bookings/bulk/time-range
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "fieldId": "{{fieldId}}",
+    "startDate": "2026-05-10",
+    "endDate": "2026-05-12",
+    "userName": "John Doe",
+    "phoneNumber": "+9779800000000"
+  }
+}

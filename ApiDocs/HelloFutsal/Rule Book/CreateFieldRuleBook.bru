@@ -1,18 +1,18 @@
 meta {
-  name: UpdateFieldRuleBook
+  name: CreateFieldRuleBook
   type: http
-  seq: 8
+  seq: 5
 }
 
-patch {
-  url: {{development}}/fields/{{fieldId}}/rule-books/{{ruleBookId}}
+post {
+  url: {{development}}/fields/{{fieldId}}/rule-books
   body: json
   auth: bearer
 }
 
 headers {
   Content-Type: application/json
-  ~Authorization: Bearer {{token}}
+  ~Authorization: Bearer $TOKEN
 }
 
 auth:bearer {
@@ -21,7 +21,8 @@ auth:bearer {
 
 body:json {
   {
-    "ruleName": "Early Bird Morning Special",
+    "ruleName": "Early Bird Morning Special 3",
+    "effectiveDate": "2026-05-21",
     "slotSelectionType": "timeRange",
     "actionType": "fixedPrice",
     "value": 1000,

@@ -1,0 +1,15 @@
+meta {
+  name: GetCurrentAccount
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{development}}/auth/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

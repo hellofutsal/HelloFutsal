@@ -50,6 +50,8 @@ export class Field {
 
   @Column({ name: "image_url", type: "text", nullable: true })
   imageUrl?: string;
+  @Column({ name: "inventory", type: "jsonb", nullable: true })
+  inventory?: Record<string, string> | null;
 
   @Column({ name: "is_active", type: "boolean", default: true })
   isActive!: boolean;

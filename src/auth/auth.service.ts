@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   UnauthorizedException,
+  NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import * as bcrypt from "bcryptjs";
@@ -50,11 +51,11 @@ export class AuthService {
     }
 
     if (email) {
-      await this.ensureEmailIsAvailable(email);
+      await this.ensureAdminEmailIsAvailable(email);
     }
 
     if (mobileNumber) {
-      await this.ensureMobileIsAvailable(mobileNumber);
+      await this.ensureAdminMobileIsAvailable(mobileNumber);
     }
 
     const username = this.normalizeUsername(requestUserSignupOtpDto.username);
@@ -199,6 +200,8 @@ export class AuthService {
       mobileNumber: savedUser.mobileNumber,
       role: "user",
       name: savedUser.name,
+      onboardingNumber: savedUser.onboardingNumber,
+      onboardingComplete: savedUser.onboardingComplete,
     });
   }
 
@@ -245,6 +248,8 @@ export class AuthService {
       mobileNumber: user.mobileNumber,
       role: "user",
       name: user.name,
+      onboardingNumber: user.onboardingNumber,
+      onboardingComplete: user.onboardingComplete,
     });
   }
 
@@ -273,11 +278,11 @@ export class AuthService {
     }
 
     if (email) {
-      await this.ensureEmailIsAvailable(email);
+      await this.ensureAdminEmailIsAvailable(email);
     }
 
     if (mobileNumber) {
-      await this.ensureMobileIsAvailable(mobileNumber);
+      await this.ensureAdminMobileIsAvailable(mobileNumber);
     }
 
     const otp = this.generateOtp();
@@ -375,26 +380,21 @@ export class AuthService {
             : undefined;
 
         if (email) {
-          const [existingUserByEmail, existingAdminByEmail] = await Promise.all(
-            [
-              userRepository.findOne({ where: { email } }),
-              adminRepository.findOne({ where: { email } }),
-            ],
-          );
+          const existingAdminByEmail = await adminRepository.findOne({
+            where: { email },
+          });
 
-          if (existingUserByEmail || existingAdminByEmail) {
+          if (existingAdminByEmail) {
             throw new ConflictException("Email already exists");
           }
         }
 
         if (mobileNumber) {
-          const [existingUserByMobile, existingAdminByMobile] =
-            await Promise.all([
-              userRepository.findOne({ where: { mobileNumber } }),
-              adminRepository.findOne({ where: { mobileNumber } }),
-            ]);
+          const existingAdminByMobile = await adminRepository.findOne({
+            where: { mobileNumber },
+          });
 
-          if (existingUserByMobile || existingAdminByMobile) {
+          if (existingAdminByMobile) {
             throw new ConflictException("Mobile number already exists");
           }
         }
@@ -426,6 +426,8 @@ export class AuthService {
       mobileNumber: savedAdmin.mobileNumber,
       role: "admin",
       name: savedAdmin.ownerName,
+      onboardingNumber: savedAdmin.onboardingNumber,
+      onboardingComplete: savedAdmin.onboardingComplete,
     });
   }
 
@@ -461,7 +463,32 @@ export class AuthService {
       mobileNumber: admin.mobileNumber,
       role: "admin",
       name: admin.ownerName,
+      onboardingNumber: admin.onboardingNumber,
+      onboardingComplete: admin.onboardingComplete,
     });
+  }
+
+  async updateAdminOnboarding(adminId: string, onboardingNumber: number) {
+    const onboardingComplete = onboardingNumber === 2 || onboardingNumber === 3;
+
+    await this.groundOwnerAccountsRepository.update(
+      { id: adminId },
+      { onboardingNumber, onboardingComplete },
+    );
+
+    const updated = await this.groundOwnerAccountsRepository.findOne({
+      where: { id: adminId },
+    });
+
+    if (!updated) {
+      throw new NotFoundException("Admin not found");
+    }
+
+    return {
+      id: updated.id,
+      onboardingNumber: updated.onboardingNumber,
+      onboardingComplete: updated.onboardingComplete,
+    };
   }
 
   private async ensureEmailIsAvailable(email: string): Promise<void> {
@@ -471,6 +498,16 @@ export class AuthService {
     ]);
 
     if (user || admin) {
+      throw new ConflictException("Email already exists");
+    }
+  }
+
+  private async ensureAdminEmailIsAvailable(email: string): Promise<void> {
+    const admin = await this.groundOwnerAccountsRepository.findOne({
+      where: { email },
+    });
+
+    if (admin) {
       throw new ConflictException("Email already exists");
     }
   }
@@ -486,6 +523,18 @@ export class AuthService {
     ]);
 
     if (user || admin) {
+      throw new ConflictException("Mobile number already exists");
+    }
+  }
+
+  private async ensureAdminMobileIsAvailable(
+    mobileNumber: string,
+  ): Promise<void> {
+    const admin = await this.groundOwnerAccountsRepository.findOne({
+      where: { mobileNumber },
+    });
+
+    if (admin) {
       throw new ConflictException("Mobile number already exists");
     }
   }
@@ -546,9 +595,17 @@ export class AuthService {
       role: account.role,
     });
 
+    // Extract onboarding fields if present
+    const onboardingNumber = (account as any).onboardingNumber ?? null;
+    const onboardingComplete = (account as any).onboardingComplete ?? null;
+
     return {
       accessToken,
-      account,
+      account: {
+        ...account,
+        onboardingNumber,
+        onboardingComplete,
+      },
     };
   }
 

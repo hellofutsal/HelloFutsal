@@ -12,7 +12,8 @@ import { UserAccount } from "../../auth/entities/user.entity";
 import { Field } from "../../fields/entities/field.entity";
 import { FieldSlot } from "../../fields/entities/field-slot.entity";
 
-export type BookingStatus = "booked" | "completed" | "cancelled";
+export type BookingStatus = "booked" | "completed" | "cancelled" | "tournament";
+export type BookingType = "normal" | "membership" | "tournament";
 
 @Entity({ name: "bookings" })
 @Index(["fieldId"])
@@ -51,6 +52,56 @@ export class Booking {
 
   @Column({ name: "status", type: "varchar", default: "booked" })
   status!: BookingStatus;
+
+  @Column({ name: "booking_type", type: "varchar", default: "normal" })
+  bookingType!: BookingType;
+
+  @Column({ name: "discount", type: "boolean", default: false })
+  discount!: boolean;
+
+  @Column({
+    name: "base_amount",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  baseAmount!: string;
+
+  @Column({
+    name: "total_amount",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  totalAmount!: string;
+
+  @Column({
+    name: "extra_amount",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  extraAmount!: string;
+
+  @Column({
+    name: "discount_amount",
+    type: "numeric",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
+  discountAmount!: string;
+
+  @Column({ name: "selected_inventory", type: "jsonb", nullable: true })
+  selectedInventory?: Array<{
+    name: string;
+    quantity: number;
+    unitPrice: string;
+    subtotal: string;
+  }> | null;
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;

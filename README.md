@@ -94,4 +94,6 @@ The app loads secrets from `.env`, waits for Postgres to become healthy, then ru
 - `synchronize` is disabled (`DB_SYNCHRONIZE=false`) for local and Docker environments.
 - Use migrations for all schema changes.
 
+RESET_PROD_CONFIRM=RESET_PROD npm run db:reset:prod
+
 # HelloFutsal

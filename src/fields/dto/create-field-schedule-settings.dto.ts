@@ -23,9 +23,25 @@ export class CreateFieldScheduleSettingsDto {
   @Min(1)
   slotDurationMin!: number;
 
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) {
+      return 0;
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return 0;
+      }
+
+      return Number(trimmed);
+    }
+
+    return value;
+  })
   @IsNumber({ maxDecimalPlaces: 0 })
   @Min(0)
-  breakBetweenMin!: number;
+  breakBetweenMin: number = 0;
 
   @Transform(({ value }) => {
     if (value === undefined || value === null) {

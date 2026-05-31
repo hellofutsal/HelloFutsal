@@ -7,16 +7,16 @@ meta {
 post {
   url: {{development}}/auth/admins/login
   body: json
-  auth: bearer
+  auth: none
 }
 
-auth:bearer {
-  token: {{token}}
+headers {
+  Content-Type: application/json
 }
 
 body:json {
   {
-   "mobileNumber": "9812345679",
+    "mobileNumber": "9867754738",
     "password": "StrongPass123"
   }
 }

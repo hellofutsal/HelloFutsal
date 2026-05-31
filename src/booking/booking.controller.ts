@@ -11,7 +11,10 @@ import {
 import { CurrentAccount } from "../auth/decorators/current-account.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthenticatedAccount } from "../auth/types/authenticated-account.type";
+import { ConfirmBookingDto } from "./dto/confirm-booking.dto";
 import { CreateBookingDto } from "./dto/create-booking.dto";
+import { BulkBookSlotsDto } from "./dto/bulk-book-slots.dto";
+import { BulkConfirmBookingsDto } from "./dto/bulk-confirm-bookings.dto";
 import { BookingService } from "./booking.service";
 
 @Controller("bookings")
@@ -28,12 +31,44 @@ export class BookingController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Patch("bulk/confirm")
+  bulkConfirmBookings(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Body() bulkConfirmDto: BulkConfirmBookingsDto,
+  ) {
+    return this.bookingService.bulkConfirmBookings(account, bulkConfirmDto);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Patch(":slotId/confirm")
   confirmBooking(
     @CurrentAccount() account: AuthenticatedAccount,
     @Param("slotId", new ParseUUIDPipe()) slotId: string,
+    @Body() confirmBookingDto: ConfirmBookingDto,
   ) {
-    return this.bookingService.confirmBooking(account, slotId);
+    return this.bookingService.confirmBooking(
+      account,
+      slotId,
+      confirmBookingDto,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(":slotId/cancel")
+  cancelBooking(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("slotId", new ParseUUIDPipe()) slotId: string,
+  ) {
+    return this.bookingService.cancelBooking(account, slotId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("bulk/time-range")
+  bulkBookSlots(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Body() bulkBookDto: BulkBookSlotsDto,
+  ) {
+    return this.bookingService.bulkBookSlots(account, bulkBookDto);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -43,5 +78,14 @@ export class BookingController {
     @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
   ) {
     return this.bookingService.listBookingsByField(account, fieldId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(":id")
+  getBookingById(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ) {
+    return this.bookingService.getBookingById(account, id);
   }
 }

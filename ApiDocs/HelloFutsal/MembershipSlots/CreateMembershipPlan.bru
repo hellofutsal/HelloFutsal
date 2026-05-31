@@ -1,0 +1,80 @@
+meta {
+  name: CreateMembershipPlan
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{development}}/membership-plans
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "userName": "Ayush Morning Slot 2",
+    "phoneNumber": "9867654567",
+    "fieldId": "{{fieldId}}",
+    "perSlotPrice": 2000,
+    "startDate": "2026-05-02",
+    "timeRange": [
+      {
+        "day": "friday",
+        "slots": [
+          {
+            "startTime": "15:00",
+            "endTime": "16:00"
+          }
+        ]
+      }
+    ],
+    "active": true
+  }
+}
+
+docs {
+  # Create Flexible Membership Plan
+  
+  Creates a membership plan with flexible day/time scheduling. Each day in the membership can have independent start and end times.
+  
+  ## Request Body
+  
+  - `userName` (string): Name of the membership user
+  - `phoneNumber` (string): Phone number of the membership user
+  - `fieldId` (uuid): ID of the field this membership is for
+  - `perSlotPrice` (number): Price per slot for the membership plan
+  - `startDate` (string): Start date in YYYY-MM-DD format for the whole plan
+  - `timeRange` (array): Array of day schedules:
+    - `day` (string): Day name (sunday, monday, tuesday, wednesday, thursday, friday, saturday)
+    - `slots` (array): Array of time windows for that day:
+      - `startTime` (string): Start time in HH:mm format
+      - `endTime` (string): End time in HH:mm format
+  - `active` (boolean, optional): Whether the membership is active (default: true)
+  
+  ## Example Usage
+  
+  Multiple days with different time windows:
+  - Saturday: 17:00-18:00, 18:00-19:00 (uses the shared perSlotPrice)
+  - Sunday: 07:00-08:00
+  
+  ## Response
+  
+  Returns the created membership plan with:
+  - `plan`: The membership plan object with the submitted per-slot price and shared start date
+  - `syncedSlots`: Number of slots that were automatically synced and booked
+  - `success`: Boolean indicating success
+  
+  ## Validations
+  
+  - End time must be after start time for each day
+  - No overlapping time windows for the same day with existing membership plans
+  - Field must belong to the authenticated user
+}

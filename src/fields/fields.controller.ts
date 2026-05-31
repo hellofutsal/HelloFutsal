@@ -8,6 +8,7 @@ import {
   ParseArrayPipe,
   ParseUUIDPipe,
   Post,
+  Delete,
   Query,
   UseGuards,
   UseInterceptors,
@@ -25,6 +26,7 @@ import { CreateFieldRuleBookDto } from "./dto/create-field-rule-book.dto";
 import { CreateFieldScheduleSettingsDto } from "./dto/create-field-schedule-settings.dto";
 import { CreateFieldSlotDto } from "./dto/create-field-slot.dto";
 import { GetFieldSlotsQueryDto } from "./dto/get-field-slots-query.dto";
+import { UpdateFieldInventoryDto } from "./dto/update-field-inventory.dto";
 import { FieldsService } from "./fields.service";
 
 @Controller("fields")
@@ -89,6 +91,17 @@ export class FieldsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Patch(":fieldId/inventory")
+  updateInventory(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Body() payload: UpdateFieldInventoryDto,
+  ) {
+    const dto = this.validateInventoryDto(payload, "inventory");
+    return this.fieldsService.updateFieldInventory(account, fieldId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post(":fieldId/slots")
   createSlots(
     @CurrentAccount() account: AuthenticatedAccount,
@@ -106,6 +119,14 @@ export class FieldsController {
     return this.fieldsService.createSlots(account, fieldId, [slotDto]);
   }
 
+  @Get(":fieldId/slots/:slotId")
+  getSlotById(
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Param("slotId", new ParseUUIDPipe()) slotId: string,
+  ) {
+    return this.fieldsService.getSlotById(fieldId, slotId);
+  }
+
   @Get(":fieldId/slots")
   getSlotsByField(
     @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
@@ -113,6 +134,15 @@ export class FieldsController {
   ) {
     const query = this.validateSlotsQueryDto(payload, "query");
     return this.fieldsService.listSlotsByField(fieldId, query);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(":fieldId/slot-summary")
+  getFieldSlotSummary(
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @CurrentAccount() account: AuthenticatedAccount,
+  ) {
+    return this.fieldsService.getFieldSlotSummary(fieldId, account.id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -124,6 +154,40 @@ export class FieldsController {
   ) {
     const dto = this.validateScheduleSettingsDto(payload, "scheduleSettings");
     return this.fieldsService.createScheduleSettings(account, fieldId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("rule-books/:ruleBookId")
+  async getRuleBookById(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("ruleBookId", new ParseUUIDPipe()) ruleBookId: string,
+  ) {
+    return this.fieldsService.getRuleBookById(ruleBookId, account);
+  }
+  @UseGuards(JwtAuthGuard)
+  @Get("schedule-settings/by-admin")
+  getAllScheduleSettingsByAdmin(
+    @CurrentAccount() account: AuthenticatedAccount,
+  ) {
+    return this.fieldsService.getAllScheduleSettingsByAdmin(account);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("schedule-settings/:scheduleSettingId")
+  async getScheduleSettingById(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("scheduleSettingId", new ParseUUIDPipe()) scheduleSettingId: string,
+  ) {
+    return this.fieldsService.getScheduleSettingById(
+      scheduleSettingId,
+      account,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("schedule-settings")
+  getScheduleSettingByUserId(@CurrentAccount() account: AuthenticatedAccount) {
+    return this.fieldsService.getScheduleSettingByUserId(account);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -165,6 +229,42 @@ export class FieldsController {
     );
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Delete(":fieldId")
+  deleteField(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+  ) {
+    return this.fieldsService.deleteField(account, fieldId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(":fieldId/rule-books/:ruleBookId")
+  deleteRuleBook(
+    @CurrentAccount() account: AuthenticatedAccount,
+    @Param("fieldId", new ParseUUIDPipe()) fieldId: string,
+    @Param("ruleBookId", new ParseUUIDPipe()) ruleBookId: string,
+  ) {
+    return this.fieldsService.deleteRuleBook(account, fieldId, ruleBookId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("rule-books/by-admin")
+  getRuleBooksByAdmin(@CurrentAccount() account: AuthenticatedAccount) {
+    return this.fieldsService.getRuleBooksByAdmin(account);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("rule-books/by-user")
+  getRuleBooksByUser(@CurrentAccount() account: AuthenticatedAccount) {
+    return this.fieldsService.getRuleBooksByUser(account);
+  }
+
+  @Get("rule-books/by-field/:fieldId")
+  getRuleBooksByField(@Param("fieldId", new ParseUUIDPipe()) fieldId: string) {
+    return this.fieldsService.getRuleBooksByField(fieldId);
+  }
+
   private validateDto(value: unknown, label: string): CreateFieldDto {
     const dto = plainToInstance(CreateFieldDto, value);
     const errors = validateSync(dto, {
@@ -182,6 +282,24 @@ export class FieldsController {
 
   private validateSlotDto(value: unknown, label: string): CreateFieldSlotDto {
     const dto = plainToInstance(CreateFieldSlotDto, value);
+    const errors = validateSync(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    if (errors.length > 0) {
+      const message = this.collectValidationMessages(errors).join(", ");
+      throw new BadRequestException(`${label}: ${message}`);
+    }
+
+    return dto;
+  }
+
+  private validateInventoryDto(
+    value: unknown,
+    label: string,
+  ): UpdateFieldInventoryDto {
+    const dto = plainToInstance(UpdateFieldInventoryDto, value);
     const errors = validateSync(dto, {
       whitelist: true,
       forbidNonWhitelisted: true,

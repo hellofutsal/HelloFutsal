@@ -1,5 +1,5 @@
 meta {
-  name: GetFieldByAdmin
+  name: GetMyFields
   type: http
   seq: 2
 }
@@ -10,10 +10,6 @@ get {
   auth: bearer
 }
 
-headers {
-  ~Authorization: Bearer $TOKEN
-}
-
 auth:bearer {
-  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlZmVjM2ExNS1iYTQyLTQxNjItYjFiYy01NDYwYmUyZjUyMTgiLCJlbWFpbCI6ImF5dXNoMUBnbWFpbC5jb20iLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3NzU3MjQwNDgsImV4cCI6MTc3NTgxMDQ0OH0.0ERIuSkD-7Dk_JpitO2oLbnI7oK6zjN5ndY3ZICWIYs
+  token: {{token}}
 }

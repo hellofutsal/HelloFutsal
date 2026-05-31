@@ -1,0 +1,28 @@
+meta {
+  name: BulkConfirmBookings
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{development}}/bookings/bulk/confirm
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "totalAmount": 5000,
+    "bookings": [
+      { "slotId": "{{slotId}}" }
+    ]
+  }
+}
