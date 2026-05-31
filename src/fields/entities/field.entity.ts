@@ -48,6 +48,8 @@ export class Field {
   @Column({ type: "text", nullable: true })
   description?: string;
 
+  @Column({ name: "image_url", type: "text", nullable: true })
+  imageUrl?: string;
   @Column({ name: "inventory", type: "jsonb", nullable: true })
   inventory?: Record<string, string> | null;
 
